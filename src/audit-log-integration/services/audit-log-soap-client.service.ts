@@ -1,6 +1,8 @@
 // src/services/soap-client.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import { createClientAsync, Client } from 'soap';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error
+import { Client, createClientAsync } from 'soap';
 import { v4 as uuidv4 } from 'uuid';
 import { InjectModel } from '@nestjs/sequelize';
 import { AuditLogModel } from '../../audit-log-model/audit-log.model';
@@ -8,6 +10,8 @@ import { AuditLogIntegrationModel } from '../../audit-log-model/audit-log-integr
 
 @Injectable()
 export class AuditLogSoapClientService {
+  private readonly logger = new Logger(AuditLogSoapClientService.name);
+
   constructor(
     @InjectModel(AuditLogModel)
     private readonly auditLogModel: typeof AuditLogModel,
@@ -33,7 +37,7 @@ export class AuditLogSoapClientService {
         });
       });
 
-      client.on('soapError', async (error) => {
+      client.on('soapError', async (error: { root: { Envelope: any } }) => {
         const duration = Date.now() - startTime;
         console.error('SOAP Error:', error);
         await this.saveLog({
@@ -85,8 +89,8 @@ export class AuditLogSoapClientService {
         duration,
         // createdAt will be handled by Sequelize/database
       } as any);
-    } catch (error) {
-      console.error('Error saving error log:', error);
+    } catch (error: any) {
+      this.logger.error('Error saving error log:', error);
     }
   }
 }
