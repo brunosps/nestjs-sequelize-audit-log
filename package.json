@@ -1,5 +1,5 @@
 {
-  "name": "@brunosps/audit-log",
+  "name": "@brunosps00/audit-log",
   "version": "0.0.4",
   "description": "Biblioteca para gerenciamento de logs de auditoria em aplicações NestJS",
   "author": "Bruno Santos",
