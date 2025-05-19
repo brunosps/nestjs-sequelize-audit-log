@@ -7,7 +7,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "audit-log-copy-migrations": "./scripts/copy-migrations.js"
+    "audit-log-copy-migrations": "scripts/copy-migrations.js"
   },
   "files": [
     "dist/**/*",
@@ -19,6 +19,7 @@
     "prebuild": "npm run clean",
     "build": "tsc",
     "prepublishOnly": "npm run build",
+    "pkgfix": "npm pkg fix",
     "test": "echo \"Sem testes ainda\" && exit 0",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "format": "prettier --write \"src/**/*.ts\""
