@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { AuditLogModelModule } from '../../audit-log-model/audit-log-model.module';
 import { AuditLogHttpService } from './audit-log-http.service';
 import { AuditLogSoapClientService } from './audit-log-soap-client.service';
