@@ -16,9 +16,9 @@ This library provides a comprehensive audit logging system for NestJS applicatio
 To use this library in your NestJS project, you need to install it along with its dependencies:
 
 ```bash
-npm install @brunosps/audit-log @nestjs/sequelize sequelize sequelize-typescript
+npm install @brunosps00/audit-log @nestjs/sequelize sequelize sequelize-typescript
 # or
-yarn add @brunosps/audit-log @nestjs/sequelize sequelize sequelize-typescript
+yarn add @brunosps00/audit-log @nestjs/sequelize sequelize sequelize-typescript
 ```
 
 ## Configuration
@@ -27,7 +27,7 @@ To set up the Audit Log system in your NestJS application, you need to import an
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { AuditLogModule } from '@brunosps/audit-log'; // Corrected package name
+import { AuditLogModule } from '@brunosps00/audit-log'; // Corrected package name
 import { SequelizeModule } from '@nestjs/sequelize'; // Your main Sequelize module
 
 @Module({
@@ -137,7 +137,7 @@ Integration call logging is enabled if `enableIntegrationLogging` is set to `tru
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { AuditLogSoapClientService } from '@brunosps/audit-log';
+import { AuditLogSoapClientService } from '@brunosps00/audit-log';
 
 @Injectable()
 export class YourService {
@@ -158,7 +158,7 @@ You can log custom events using the `AuditLogEvent` decorator on methods in your
 
 ```typescript
 import { Injectable } from '@nestjs/common';
-import { AuditLogEvent } from '@brunosps/audit-log'; // Verify the correct import path
+import { AuditLogEvent } from '@brunosps00/audit-log'; // Verify the correct import path
 
 @Injectable()
 export class YourService {
