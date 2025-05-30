@@ -6,8 +6,6 @@ import { Sequelize } from 'sequelize';
 
 @Injectable()
 export class AuditLogUserSessionMiddleware implements NestMiddleware {
-  private auditLogDatabaseService: any;
-
   constructor(@InjectConnection() private readonly sequelize: Sequelize) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
@@ -22,12 +20,6 @@ export class AuditLogUserSessionMiddleware implements NestMiddleware {
     } catch (error) {
       console.error('Failed to set user session in MySQL:', error);
     }
-
-    this.auditLogDatabaseService.setUser({
-      id: req.user?.id || 'anonymous',
-      ipAddress: req.ip || 'unknown',
-    });
-
     next();
   }
 }

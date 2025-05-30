@@ -16,10 +16,6 @@ export class AuditLogDatabaseService {
   auditLogTable: string;
   auditLogDetailTable: string;
 
-  // Definite assignment assertion for injected property
-  @InjectModel(AuditLogModel)
-  private readonly auditLogModel!: typeof AuditLogModel;
-
   async onModuleInit() {
     if (this.auditedTables.length > 0) {
       this.createBaseTriggers();
@@ -43,10 +39,8 @@ export class AuditLogDatabaseService {
     private readonly sequelize: Sequelize,
     @Inject('AUDITEDTABLES')
     private auditedTables: Array<string>,
-    // Ensure AuditLogModel is injected if not already via @InjectModel property decorator
-    // If @InjectModel(AuditLogModel) is on the property, this constructor param might be redundant
-    // or should be used to assign to this.auditLogModel if the decorator isn't used.
-    // For this fix, assuming @InjectModel on property is the primary way.
+    @Inject('ENABLETRIGGERDEBUGLOG')
+    private enableTriggerDebugLog: boolean,
   ) {
     this.auditLogTable = 'audit_logs';
     this.auditLogDetailTable = 'audit_logs_entity';
@@ -66,11 +60,7 @@ export class AuditLogDatabaseService {
       this.baseScripts('generate_changed_json'),
       `DROP FUNCTION IF EXISTS uuid_v4`,
       this.baseScripts('uuid_v4'),
-    ].filter((script) => script.trim() !== ''); // typeof check is no longer needed if baseScripts returns string
-
-    for (const sqlCmd of scriptsToExecute) {
-      await this.execScript(sqlCmd); // sqlCmd is now definitely a string
-    }
+    ].forEach(async (sqlCmd) => await this.execScript(sqlCmd!));
   }
 
   public async enable(tableName: string, fields: string[] = []) {
@@ -123,7 +113,8 @@ export class AuditLogDatabaseService {
     try {
       await this.sequelize.query(sqlCmd.replace(/\n/g, ''), { raw: true });
     } catch (err) {
-      console.error(err);
+      console.error('Error executing SQL script:', err);
+      console.error('SQL Command:', sqlCmd);
     }
   }
 
@@ -189,22 +180,25 @@ export class AuditLogDatabaseService {
   }
 
   private async disbleAudit(tableName: string) {
-    this.sequelize.query(
+    await this.sequelize.query(
       `DROP TRIGGER IF EXISTS audit_log_delete_${tableName};`,
     );
-    this.sequelize.query(
+    await this.sequelize.query(
       `DROP TRIGGER IF EXISTS audit_log_create_${tableName};`,
     );
-    this.sequelize.query(
+    await this.sequelize.query(
       `DROP TRIGGER IF EXISTS audit_log_update_${tableName};`,
     );
   }
 
   private templateDeleteTrigger(schema: InformationSchemaType) {
+    const NULL_MARKER = '@@MYSQL_AUDIT_NULL@@';
     const params = {
       tableName: schema.table,
       fields: schema.fields.join(', '),
-      oldFields: `OLD.${schema.fields.join(', OLD.')}`,
+      oldFields: schema.fields
+        .map((f) => `IFNULL(OLD.${f}, '${NULL_MARKER}')`)
+        .join(', '),
       auditLogTable: this.auditLogTable,
       auditLogDetailTable: this.auditLogDetailTable,
       entityPk: `${schema.pk.join('+')}`,
@@ -228,7 +222,7 @@ export class AuditLogDatabaseService {
                 SET current_user_ip = IFNULL(@user_ip, '0.0.0.0');
 
                 SET fields = "${params.fields}";
-                SET old_row = CONCAT_WS(",",  ${params.oldFields});
+                SET old_row = CONCAT_WS(",", ${params.oldFields});
                 SET new_row = "";
                 
                 SET new_json = "{}";
@@ -236,7 +230,14 @@ export class AuditLogDatabaseService {
                 SET changed = "{}";
                 
                 SET logId = uuid_v4();
-                
+
+                ${
+                  this.enableTriggerDebugLog
+                    ? `INSERT INTO trigger_debug_log (trigger_event, old_row_data, new_row_data, fields_data, changed_output, old_json_output, new_json_output)
+                VALUES ('DELETE_${params.tableName}', old_row, new_row, fields, changed, old_json, new_json);`
+                    : ''
+                }
+
                 INSERT INTO ${params.auditLogTable} (id, log_type, ip_address, user_id) 
                         VALUES (logId, 'ENTITY', current_user_ip, current_user_id);
                 
@@ -247,10 +248,13 @@ export class AuditLogDatabaseService {
   }
 
   private templateCreateTrigger(schema: InformationSchemaType) {
+    const NULL_MARKER = '@@MYSQL_AUDIT_NULL@@';
     const params = {
       tableName: schema.table,
       fields: schema.fields.join(', '),
-      newFields: `NEW.${schema.fields.join(', NEW.')}`,
+      newFields: schema.fields
+        .map((f) => `IFNULL(NEW.${f}, '${NULL_MARKER}')`)
+        .join(', '),
       auditLogTable: this.auditLogTable,
       auditLogDetailTable: this.auditLogDetailTable,
       entityPk: `${schema.pk.join('+')}`,
@@ -275,7 +279,7 @@ export class AuditLogDatabaseService {
 
                 SET fields = "${params.fields}";
                 SET old_row = "";
-                SET new_row = CONCAT_WS(",",  ${params.newFields});
+                SET new_row = CONCAT_WS(",", ${params.newFields});
                 
                 SET new_json = generate_changed_json("", new_row, fields);
                 SET old_json = "{}";
@@ -283,6 +287,13 @@ export class AuditLogDatabaseService {
 
                 SET logId = uuid_v4();
                 
+                ${
+                  this.enableTriggerDebugLog
+                    ? `INSERT INTO trigger_debug_log (trigger_event, old_row_data, new_row_data, fields_data, changed_output, old_json_output, new_json_output)
+                VALUES ('CREATE_${params.tableName}', old_row, new_row, fields, changed, old_json, new_json);`
+                    : ''
+                }
+
                 INSERT INTO  ${params.auditLogTable} (id, log_type, ip_address, user_id) 
                         VALUES (logId, 'ENTITY', current_user_ip, current_user_id);
                 
@@ -293,11 +304,16 @@ export class AuditLogDatabaseService {
   }
 
   private templateUpdateTrigger(schema: InformationSchemaType) {
+    const NULL_MARKER = '@@MYSQL_AUDIT_NULL@@';
     const params = {
       tableName: schema.table,
       fields: schema.fields.join(', '),
-      newFields: `NEW.${schema.fields.join(', NEW.')}`,
-      oldFields: `OLD.${schema.fields.join(', OLD.')}`,
+      newFields: schema.fields
+        .map((f) => `IFNULL(NEW.${f}, '${NULL_MARKER}')`)
+        .join(', '),
+      oldFields: schema.fields
+        .map((f) => `IFNULL(OLD.${f}, '${NULL_MARKER}')`)
+        .join(', '),
       auditLogTable: this.auditLogTable,
       auditLogDetailTable: this.auditLogDetailTable,
       entityPk: `${schema.pk.join('+')}`,
@@ -321,27 +337,36 @@ export class AuditLogDatabaseService {
                 SET current_user_ip = IFNULL(@user_ip, '0.0.0.0');
 
                 SET fields = "${params.fields}";
-                SET old_row = CONCAT_WS(",",  ${params.oldFields});
-                SET new_row = CONCAT_WS(",",  ${params.newFields});
+                SET old_row = CONCAT_WS(",", ${params.oldFields});
+                SET new_row = CONCAT_WS(",", ${params.newFields});
                 
                 SET new_json = generate_changed_json("", new_row, fields);
                 SET old_json = generate_changed_json("", old_row, fields);
                 SET changed = generate_changed_json(old_row, new_row, fields);
 
-                SET logId = uuid_v4();
-                
-                INSERT INTO  ${params.auditLogTable} (id, log_type, ip_address, user_id) 
-                        VALUES (logId, 'ENTITY', current_user_ip, current_user_id);
-                
+                IF changed != '{}' THEN
+                    SET logId = uuid_v4();
 
-                INSERT INTO ${params.auditLogDetailTable} (log_id, id, action, entity, entity_pk, changed_values, \`before_change\`, after_change, table_schema) 
-                        VALUES (logId, uuid_v4(), 'UPDATE', '${params.tableName}', '${params.entityPk}', changed, old_json, new_json, get_table_schema('${params.tableName}'));
+                    ${
+                      this.enableTriggerDebugLog
+                        ? `INSERT INTO trigger_debug_log (trigger_event, old_row_data, new_row_data, fields_data, changed_output, old_json_output, new_json_output)
+                    VALUES ('UPDATE_${params.tableName}', old_row, new_row, fields, changed, old_json, new_json);`
+                        : ''
+                    }
+
+                    INSERT INTO  ${params.auditLogTable} (id, log_type, ip_address, user_id) 
+                            VALUES (logId, 'ENTITY', current_user_ip, current_user_id);
+                    
+
+                    INSERT INTO ${params.auditLogDetailTable} (log_id, id, action, entity, entity_pk, changed_values, \`before_change\`, after_change, table_schema) 
+                            VALUES (logId, uuid_v4(), 'UPDATE', '${params.tableName}', '${params.entityPk}', changed, old_json, new_json, get_table_schema('${params.tableName}'));
+                END IF;
             END;
         `;
   }
 
-  private baseScripts(name: string): string {
-    // Changed return type to string
+  private baseScripts(name: string) {
+    const NULL_MARKER = '@@MYSQL_AUDIT_NULL@@';
     switch (name) {
       case 'generate_changed_json':
         return `CREATE FUNCTION generate_changed_json(
@@ -357,6 +382,7 @@ export class AuditLogDatabaseService {
                     DECLARE new_value TEXT;
                     DECLARE field_count INT;
                     DECLARE prefix TEXT DEFAULT '';
+                    DECLARE escaped_new_value TEXT;
         
                     SET field_count = LENGTH(fields) - LENGTH(REPLACE(fields, ',', '')) + 1;
         
@@ -365,8 +391,13 @@ export class AuditLogDatabaseService {
                         SET old_value = TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(old_row, ',', i), ',', -1));
                         SET new_value = TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(new_row, ',', i), ',', -1));
         
-                        IF old_value != new_value THEN
-                            SET changed = CONCAT(changed, prefix, '"', field_name, '": "', new_value, '"');
+                        IF BINARY old_value != BINARY new_value THEN
+                            IF new_value = '${NULL_MARKER}' THEN
+                                SET changed = CONCAT(changed, prefix, '"', field_name, '": null');
+                            ELSE
+                                SET escaped_new_value = REPLACE(REPLACE(new_value, '\\\\', '\\\\\\\\'), '"', '\\\\"');
+                                SET changed = CONCAT(changed, prefix, '"', field_name, '": "', escaped_new_value, '"');
+                            END IF;
                             SET prefix = ', ';
                         END IF;
         
@@ -454,27 +485,5 @@ export class AuditLogDatabaseService {
       default:
         return '-- Script not found';
     }
-  }
-
-  async logDatabaseChange(
-    action: string,
-    tableName: string,
-    recordId: string,
-    oldValues?: any,
-    newValues?: any,
-  ) {
-    const userContext = this.getUser();
-    // Ensure userId and ipAddress are strings before creating the log object
-    const userIdString = userContext.id || 'unknown_user';
-    const ipAddressString = userContext.ipAddress || 'unknown_ip';
-
-    const log = await this.auditLogModel.create({
-      id: uuidv4(),
-      logType: 'DATABASE',
-      userId: userIdString, // Use the guaranteed string value
-      ipAddress: ipAddressString, // Use the guaranteed string value
-      createdAt: new Date(),
-    } as any); // Cast to any if other model properties cause issues, but userId/ipAddress are now definitely strings
-    // ... rest of the method
   }
 }

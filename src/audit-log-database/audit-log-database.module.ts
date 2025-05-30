@@ -4,11 +4,12 @@ import { AuditLogDatabaseService } from './services/audit-log-database.service';
 
 type AuditDatabaseModuleOptions = {
   auditedTables: Array<string>;
+  enableTriggerDebugLog?: boolean;
 };
 
 @Module({})
 export class AuditLogDatabaseModule {
-  static forRoot(config: AuditDatabaseModuleOptions): DynamicModule {
+  static register(config: AuditDatabaseModuleOptions): DynamicModule {
     return {
       module: AuditLogDatabaseModule,
       imports: [],
@@ -17,6 +18,10 @@ export class AuditLogDatabaseModule {
         {
           provide: 'AUDITEDTABLES',
           useValue: config.auditedTables,
+        },
+        {
+          provide: 'ENABLETRIGGERDEBUGLOG',
+          useValue: config.enableTriggerDebugLog,
         },
       ],
     };
