@@ -11,8 +11,6 @@ import { AuditLogRequestService } from './services/audit-log-request.service';
 
 export type AuditRequestModuleOptions = {
   authRoutes?: AuditLogRequestAuthRoute[];
-  getUserId?: AuditLogGetInfoFromRequest;
-  getIpAddress?: AuditLogGetInfoFromRequest;
 };
 
 @Module({})
@@ -27,14 +25,6 @@ export class AuditLogRequestModule {
         {
           provide: 'AUTH_ROUTES',
           useValue: config.authRoutes,
-        },
-        {
-          provide: 'GET_USERID_FUNCTION',
-          useValue: config.getUserId,
-        },
-        {
-          provide: 'GET_IPADDRESS_FUNCTION',
-          useValue: config.getIpAddress,
         },
         {
           provide: APP_INTERCEPTOR,

@@ -1,36 +1,39 @@
 import { Inject, Injectable, NestMiddleware, Optional } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
-import { InjectModel } from '@nestjs/sequelize';
 import { CreationAttributes } from 'sequelize';
 import { v4 as uuidv4 } from 'uuid';
-import { AuditLogModel } from '../../audit-log-model/audit-log.model';
 import { AuditLogRequestModel } from '../../audit-log-model/audit-log-request.model';
-import { sanitizePayload } from '../utils/sanitizePayload';
-import {
-  AuditLogGetInfoFromRequest,
-  AuditLogRequestAuthRoute,
-} from '../../interfaces/audit-log-module-options.interface';
-import { extractClientIp } from '../../utils/ip';
-import { AuditLogLoginModel } from '../../audit-log-model/audit-log-login.model';
+
+import { AuditLogRequestAuthRoute } from '../../interfaces/audit-log-module-options.interface';
+
+import { sanitizePayload } from '../../utils/sanitizePayload';
+import { AuditLogService } from '../../audit-log-core/services/audit-log.service';
+
+export type AuditLogRequestType = {
+  requestMethod: string;
+  requestURL: string;
+  responseStatus: number;
+  responseSize: number;
+  duration: number;
+  payload: string;
+  responseBody?: string;
+};
+
+export type AuditLogLoginType = {
+  system: string;
+  registerRequest: boolean;
+  userId?: string;
+  request?: AuditLogRequestType;
+};
 
 @Injectable()
 export class AuditLogRequestLoggingMiddleware implements NestMiddleware {
   constructor(
-    @InjectModel(AuditLogModel)
-    private auditLogModel: typeof AuditLogModel,
-    @InjectModel(AuditLogRequestModel)
-    private auditLogRequestModel: typeof AuditLogRequestModel,
-    @InjectModel(AuditLogLoginModel)
-    private auditLogLoginModel: typeof AuditLogLoginModel,
     @Optional()
     @Inject('AUTH_ROUTES')
     private authRoutes: AuditLogRequestAuthRoute[],
-    @Optional()
-    @Inject('GET_USERID_FUNCTION')
-    private getUserIdFn?: AuditLogGetInfoFromRequest,
-    @Optional()
-    @Inject('GET_IPADDRESS_FUNCTION')
-    private getIpAddressFn?: AuditLogGetInfoFromRequest,
+    @Inject(AuditLogService)
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
@@ -82,54 +85,29 @@ export class AuditLogRequestLoggingMiddleware implements NestMiddleware {
       const responseBody = Buffer.concat(responseChunks).toString('utf8');
       try {
         const isLoginPath = this.isLoginPath(req);
-        const data = {
-          id: String(req['user']?.id || '_'),
-          ip: extractClientIp(req),
-          logType: isLoginPath ? 'LOGIN' : 'REQUEST',
+        const request: AuditLogRequestType = {
+          requestMethod: req.method,
+          requestURL: req.originalUrl,
+          responseStatus: res.statusCode,
+          responseSize: parseInt(res.get('Content-Length') || '0', 10),
+          duration: duration,
+          payload: payload,
+          responseBody: responseBody ? responseBody : undefined,
         };
 
-        if (this.getUserIdFn) {
-          data.id = this.getUserIdFn(req);
-        }
-
-        if (isLoginPath && isLoginPath.getUserId) {
-          data.id = isLoginPath.getUserId(JSON.parse(responseBody));
-        }
-
-        if (this.getIpAddressFn) {
-          data.ip = this.getIpAddressFn(req);
-        }
-
-        const log = await this.auditLogModel.create({
-          id: uuidv4(),
-          logType: data.logType,
-          ipAddress: data.ip,
-          userId: data.id,
-          createdAt: new Date(),
-        } as CreationAttributes<AuditLogModel>);
-
         if (isLoginPath) {
-          await this.auditLogLoginModel.create({
-            id: uuidv4(),
-            userId: data.id,
-            logId: log.id,
+          const data: AuditLogLoginType = {
             system: isLoginPath.system,
-          } as CreationAttributes<AuditLogLoginModel>);
-        }
+            registerRequest: !!isLoginPath.registerRequest,
+            request: request,
+          };
 
-        if (!isLoginPath || isLoginPath.registerRequest) {
-          await this.auditLogRequestModel.create({
-            id: uuidv4(),
-            logId: log.id,
-            requestMethod: req.method,
-            requestURL: req.originalUrl,
-            responseStatus: res.statusCode,
-            responseSize: parseInt(res.get('Content-Length') || '0', 10),
-            duration: duration,
-            payload: payload,
-            responseBody: responseBody ? responseBody : undefined,
-            createdAt: new Date(),
-          } as CreationAttributes<AuditLogRequestModel>);
+          if (isLoginPath.getUserId) {
+            data.userId = isLoginPath.getUserId(JSON.parse(responseBody));
+          }
+          this.auditLogService.registerLog('LOGIN', data);
+        } else {
+          this.auditLogService.registerLog('REQUEST', request);
         }
       } catch (error) {
         console.error('Error logging request:', error);

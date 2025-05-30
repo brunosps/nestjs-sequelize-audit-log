@@ -14,16 +14,11 @@ import {
 import { InjectModel } from '@nestjs/sequelize';
 import { v4 as uuidv4 } from 'uuid';
 import { CreationAttributes } from 'sequelize';
-import { AsyncLocalStorage } from 'async_hooks';
 import { AuditLogModel } from '../../audit-log-model/audit-log.model';
 import { AuditLogIntegrationModel } from '../../audit-log-model/audit-log-integration.model';
-import { extractClientIp } from '../../utils/ip';
-import {
-  AuditLogGetInfoFromRequest,
-  AuditLogRequest,
-} from '../../interfaces/audit-log-module-options.interface';
+import { AuditLogService } from '../../audit-log-core/services/audit-log.service';
 
-type AuditLogSaveLog = {
+export type AuditLogHttpIntegrationType = {
   integrationName: string;
   method: string;
   requestPayload: string;
@@ -37,30 +32,11 @@ interface AxiosRequestConfigWithMetadata extends InternalAxiosRequestConfig {
 
 @Injectable()
 export class AuditLogHttpService implements OnModuleInit {
-  private static readonly asyncLocalStorage =
-    new AsyncLocalStorage<AuditLogRequest>();
-
   constructor(
     private readonly httpService: HttpService,
-    @InjectModel(AuditLogModel)
-    private readonly auditLogModel: typeof AuditLogModel,
-    @InjectModel(AuditLogIntegrationModel)
-    private readonly auditLogIntegrationModel: typeof AuditLogIntegrationModel,
-    @Optional()
-    @Inject('GET_USERID_FUNCTION')
-    private getUserIdFn?: AuditLogGetInfoFromRequest,
-    @Optional()
-    @Inject('GET_IPADDRESS_FUNCTION')
-    private getIpAddressFn?: AuditLogGetInfoFromRequest,
+    @Inject(AuditLogService)
+    private readonly auditLogService: AuditLogService,
   ) {}
-
-  static runWithRequest<T>(req: AuditLogRequest, callback: () => T): T {
-    return this.asyncLocalStorage.run(req, callback);
-  }
-
-  private getCurrentRequest(): AuditLogRequest | undefined {
-    return AuditLogHttpService.asyncLocalStorage.getStore();
-  }
 
   onModuleInit() {
     const axiosInstance = this.httpService.axiosRef;
@@ -115,61 +91,9 @@ export class AuditLogHttpService implements OnModuleInit {
     );
   }
 
-  private async saveLog({
-    integrationName,
-    method,
-    requestPayload,
-    responsePayload,
-    status,
-    duration,
-  }: AuditLogSaveLog) {
+  private async saveLog(data: AuditLogHttpIntegrationType) {
     try {
-      console.log({
-        integrationName,
-        method,
-        requestPayload,
-        responsePayload,
-        status,
-        duration,
-      });
-      const req = this.getCurrentRequest();
-
-      const userInformation = {
-        id: 'system',
-        ip: '0.0.0.0',
-      };
-
-      if (req) {
-        userInformation.id = String(req['user']?.id || 'system');
-        userInformation.ip = extractClientIp(req);
-
-        if (this.getUserIdFn) {
-          userInformation.id = this.getUserIdFn(req);
-        }
-
-        if (this.getIpAddressFn) {
-          userInformation.ip = this.getIpAddressFn(req);
-        }
-      }
-
-      const auditLog = await this.auditLogModel.create({
-        id: uuidv4(),
-        logType: 'INTEGRATION',
-        ipAddress: userInformation.ip,
-        userId: userInformation.id,
-        createdAt: new Date(),
-      } as CreationAttributes<AuditLogModel>);
-
-      await this.auditLogIntegrationModel.create({
-        id: uuidv4(),
-        logId: auditLog.id,
-        integrationName,
-        method,
-        requestPayload,
-        responsePayload,
-        status,
-        duration,
-      } as CreationAttributes<AuditLogIntegrationModel>);
+      this.auditLogService.registerLog('INTEGRATION', data);
     } catch (error) {
       console.error('Error saving integration log:', error);
     }

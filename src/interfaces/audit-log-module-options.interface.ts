@@ -31,5 +31,4 @@ export interface AuditLogModuleOptions {
   auditedTables?: Array<string>;
   authRoutes?: AuditLogRequestAuthRoute[];
   enableArchive?: false | AuditLogArchiveConfig;
-  enableTriggerDebugLog?: boolean;
 }

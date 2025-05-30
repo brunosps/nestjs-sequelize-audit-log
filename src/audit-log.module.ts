@@ -1,4 +1,11 @@
-import { DynamicModule, Global, Module, Provider } from '@nestjs/common';
+import {
+  DynamicModule,
+  Global,
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  Provider,
+} from '@nestjs/common';
 import { AuditLogModelModule } from './audit-log-model/audit-log-model.module';
 import { AuditLogDatabaseModule } from './audit-log-database/audit-log-database.module';
 import { AuditLogErrorModule } from './audit-log-error/audit-log-error.module';
@@ -7,9 +14,8 @@ import { AuditLogArchiveModule } from './audit-log-archive/audit-log-archive.mod
 import { AuditLogIntegrationModule } from './audit-log-integration/audit-log-integration.module';
 import { AuditLogRequestModule } from './audit-log-request/audit-log-request.module';
 import { AuditLogModuleOptions } from './interfaces/audit-log-module-options.interface';
-import { AuditLogService } from './services/audit-log.service';
+import { AuditLogCoreModule } from './audit-log-core/audit-log-core.module';
 
-@Global()
 @Module({})
 export class AuditLogModule {
   static register(options: AuditLogModuleOptions = {}): DynamicModule {
@@ -25,27 +31,16 @@ export class AuditLogModule {
       imports.push(
         AuditLogDatabaseModule.register({
           auditedTables,
-          enableTriggerDebugLog: options.enableTriggerDebugLog ?? false,
         }),
       );
     }
 
     if (options.enableErrorLogging) {
-      imports.push(
-        AuditLogErrorModule.register({
-          modelModule: AuditLogModelModule,
-          getUserId: options.getUserId,
-          getIpAddress: options.getIpAddress,
-        }),
-      );
+      imports.push(AuditLogErrorModule.register());
     }
 
     if (options.enableIntegrationLogging) {
-      imports.push(
-        AuditLogIntegrationModule.register({
-          modelModule: AuditLogModelModule,
-        }),
-      );
+      imports.push(AuditLogIntegrationModule.register());
 
       exports.push(AuditLogIntegrationModule);
     }
@@ -54,8 +49,6 @@ export class AuditLogModule {
       imports.push(
         AuditLogRequestModule.register({
           authRoutes: options.authRoutes,
-          getUserId: options.getUserId,
-          getIpAddress: options.getIpAddress,
         }),
       );
       exports.push(AuditLogRequestModule);
@@ -64,11 +57,16 @@ export class AuditLogModule {
     return {
       module: AuditLogModule,
       imports: [
-        AuditLogEventModule.register({ modelModule: AuditLogModelModule }),
+        AuditLogCoreModule.register({
+          modelModule: AuditLogModelModule,
+          getIpAddress: options.getIpAddress,
+          getUserId: options.getUserId,
+        }),
+        AuditLogEventModule.register(),
         ...imports,
       ],
-      exports: [AuditLogEventModule, AuditLogService, ...exports],
-      providers: [AuditLogService],
+      exports: [AuditLogEventModule, ...exports],
+      providers: [],
     };
   }
 }

@@ -46,39 +46,11 @@ export class AuditLogEntityModel extends Model<AuditLogEntityModel> {
   entity!: string;
 
   @Column({
-    type: DataType.STRING,
-    allowNull: false,
-    field: 'entity_pk',
-  })
-  entityPk!: string;
-
-  @Column({
     type: DataType.TEXT,
     allowNull: false,
     field: 'changed_values',
   })
   changedValues!: string;
-
-  @Column({
-    type: DataType.TEXT,
-    allowNull: false,
-    field: 'before_change',
-  })
-  beforeChange!: string;
-
-  @Column({
-    type: DataType.TEXT,
-    allowNull: false,
-    field: 'after_change',
-  })
-  afterChange!: string;
-
-  @Column({
-    type: DataType.TEXT,
-    allowNull: false,
-    field: 'table_schema',
-  })
-  tableSchema!: string;
 
   @CreatedAt
   @Default(DataType.NOW)

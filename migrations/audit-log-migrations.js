@@ -51,23 +51,7 @@ module.exports = {
         type: Sequelize.STRING,
         allowNull: false
       },
-      entity_pk: {
-        type: Sequelize.STRING,
-        allowNull: false
-      },
       changed_values: {
-        type: Sequelize.TEXT,
-        allowNull: false
-      },
-      before_change: {
-        type: Sequelize.TEXT,
-        allowNull: false
-      },
-      after_change: {
-        type: Sequelize.TEXT,
-        allowNull: false
-      },
-      table_schema: {
         type: Sequelize.TEXT,
         allowNull: false
       },
@@ -327,53 +311,9 @@ module.exports = {
       onDelete: "cascade",
       onUpdate: "cascade",
     });
-
-    
-    await queryInterface.createTable('trigger_debug_log', {
-      id: {
-        type: Sequelize.INTEGER,
-        primaryKey: true,
-        autoIncrement: true,
-        allowNull: false,
-      },
-      log_time: {
-        type: Sequelize.DATE,
-        allowNull: false,
-        defaultValue: Sequelize.fn('now'),
-      },
-      trigger_event: {
-        type: Sequelize.STRING(50),
-        allowNull: true,
-      },
-      old_row_data: {
-        type: Sequelize.TEXT,
-        allowNull: true,
-      },
-      new_row_data: {
-        type: Sequelize.TEXT,
-        allowNull: true,
-      },
-      fields_data: {
-        type: Sequelize.TEXT,
-        allowNull: true,
-      },
-      changed_output: {
-        type: Sequelize.TEXT,
-        allowNull: true,
-      },
-      old_json_output: {
-        type: Sequelize.TEXT,
-        allowNull: true,
-      },
-      new_json_output: {
-        type: Sequelize.TEXT,
-        allowNull: true,
-      },
-    });
   },
 
-  async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('trigger_debug_log');
+  async down(queryInterface, Sequelize) {    
     await queryInterface.dropTable("audit_logs_integration");
     await queryInterface.dropTable('audit_logs_event');
     await queryInterface.dropTable('audit_logs_error');
