@@ -1,4 +1,4 @@
-import { DynamicModule, Module, Provider } from '@nestjs/common';
+import { DynamicModule, Global, Module, Provider } from '@nestjs/common';
 import { AuditLogModelModule } from './audit-log-model/audit-log-model.module';
 import { AuditLogDatabaseModule } from './audit-log-database/audit-log-database.module';
 import { AuditLogErrorModule } from './audit-log-error/audit-log-error.module';
@@ -7,51 +7,68 @@ import { AuditLogArchiveModule } from './audit-log-archive/audit-log-archive.mod
 import { AuditLogIntegrationModule } from './audit-log-integration/audit-log-integration.module';
 import { AuditLogRequestModule } from './audit-log-request/audit-log-request.module';
 import { AuditLogModuleOptions } from './interfaces/audit-log-module-options.interface';
+import { AuditLogService } from './services/audit-log.service';
 
+@Global()
 @Module({})
 export class AuditLogModule {
   static register(options: AuditLogModuleOptions = {}): DynamicModule {
-    const imports: any[] = [];
-    const providers: Provider[] = [
-      {
-        provide: 'AUDIT_LOG_OPTIONS', // AuditLogRequestModule and AuditLogDatabaseModule can inject this
-        useValue: options,
-      },
-      {
-        provide: 'AUDIT_LOG_EXCLUDED_ROUTES',
-        useValue: options.excludedRoutes || [],
-      },
-      {
-        provide: 'AUDIT_LOG_DATABASE_CONNECTION',
-        useValue: options.databaseConnection || '',
-      },
-    ];
+    const imports = [];
+    const exports = [];
+    const auditedTables = options.auditedTables ?? [];
 
-    if (options.enableIntegrationModule) {
-      imports.push(AuditLogIntegrationModule);
-    }
-    // Import AuditLogRequestModule directly. It should get its config from AUDIT_LOG_OPTIONS if needed.
-    // The 'authRoute' should be part of 'options' if AuditLogRequestModule needs it.
-    if (options.enableRequestModule !== false) {
-      imports.push(AuditLogRequestModule);
+    if (options.enableArchive) {
+      imports.push(AuditLogArchiveModule.register(options.enableArchive));
     }
 
-    imports.push(AuditLogModelModule);
-    // Import AuditLogDatabaseModule directly. It should get its config from AUDIT_LOG_OPTIONS.
-    imports.push(AuditLogDatabaseModule);
-    imports.push(AuditLogErrorModule);
-    imports.push(AuditLogEventModule);
-    imports.push(AuditLogArchiveModule);
+    if (auditedTables.length > 0) {
+      imports.push(
+        AuditLogDatabaseModule.register({
+          auditedTables,
+          enableTriggerDebugLog: options.enableTriggerDebugLog ?? false,
+        }),
+      );
+    }
 
-    providers.forEach((p: Provider, i: number) => {
-      // console.log(`Provider ${i}:`, p);
-    });
+    if (options.enableErrorLogging) {
+      imports.push(
+        AuditLogErrorModule.register({
+          modelModule: AuditLogModelModule,
+          getUserId: options.getUserId,
+          getIpAddress: options.getIpAddress,
+        }),
+      );
+    }
+
+    if (options.enableIntegrationLogging) {
+      imports.push(
+        AuditLogIntegrationModule.register({
+          modelModule: AuditLogModelModule,
+        }),
+      );
+
+      exports.push(AuditLogIntegrationModule);
+    }
+
+    if (options.enableRequestLogging) {
+      imports.push(
+        AuditLogRequestModule.register({
+          authRoutes: options.authRoutes,
+          getUserId: options.getUserId,
+          getIpAddress: options.getIpAddress,
+        }),
+      );
+      exports.push(AuditLogRequestModule);
+    }
 
     return {
       module: AuditLogModule,
-      imports,
-      providers,
-      exports: [...providers],
+      imports: [
+        AuditLogEventModule.register({ modelModule: AuditLogModelModule }),
+        ...imports,
+      ],
+      exports: [AuditLogEventModule, AuditLogService, ...exports],
+      providers: [AuditLogService],
     };
   }
 }

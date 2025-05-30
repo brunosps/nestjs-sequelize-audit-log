@@ -33,22 +33,22 @@ export class AuditLogIntegrationModel extends Model<AuditLogIntegrationModel> {
     allowNull: false,
     field: 'integration_name',
   })
-  integrationName: string = '';
+  integrationName!: string;
 
   @Column({ type: DataType.STRING, allowNull: false })
-  method: string = '';
+  method!: string;
 
   @Column({ type: DataType.TEXT, field: 'request_payload' })
-  requestPayload: string = '';
+  requestPayload!: string;
 
   @Column({ type: DataType.TEXT, field: 'response_payload' })
-  responsePayload: string = '';
+  responsePayload!: string;
 
   @Column({ type: DataType.STRING, allowNull: false })
-  status: string = '';
+  status!: string;
 
   @Column({ type: DataType.INTEGER, allowNull: false, defaultValue: 0 })
-  duration: number = 0;
+  duration!: number;
 
   @CreatedAt
   @Default(DataType.NOW)
@@ -57,5 +57,5 @@ export class AuditLogIntegrationModel extends Model<AuditLogIntegrationModel> {
     allowNull: false,
     field: 'created_at',
   })
-  createdAt: Date = new Date();
+  createdAt!: Date;
 }

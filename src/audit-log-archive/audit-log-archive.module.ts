@@ -10,6 +10,7 @@ import { AuditLogIntegrationModel } from '../audit-log-model/audit-log-integrati
 import { AuditLogRequestModel } from '../audit-log-model/audit-log-request.model';
 import { AuditLogArchiveTask } from './tasks/audit-log-archive.task';
 import { SequelizeModuleOptions } from '@nestjs/sequelize';
+import { AuditLogLoginModel } from '../audit-log-model/audit-log-login.model';
 
 export class ArchiveLogModel extends AuditLogModel {}
 export class ArchiveLogEntityModel extends AuditLogEntityModel {}
@@ -17,6 +18,7 @@ export class ArchiveLogErrorModel extends AuditLogErrorModel {}
 export class ArchiveLogEventModel extends AuditLogEventModel {}
 export class ArchiveLogIntegrationModel extends AuditLogIntegrationModel {}
 export class ArchiveLogRequestModel extends AuditLogRequestModel {}
+export class ArchiveLogLoginModel extends AuditLogLoginModel {}
 
 export interface AuditLogArchiveConfig {
   retentionPeriod: number;
@@ -26,7 +28,7 @@ export interface AuditLogArchiveConfig {
 
 @Module({})
 export class AuditLogArchiveModule {
-  static forRoot(config: AuditLogArchiveConfig): DynamicModule {
+  static register(config: AuditLogArchiveConfig): DynamicModule {
     const providers = [
       {
         provide: 'AUDIT_LOG_CONFIG',
@@ -42,6 +44,7 @@ export class AuditLogArchiveModule {
             ArchiveLogEventModel,
             ArchiveLogIntegrationModel,
             ArchiveLogRequestModel,
+            ArchiveLogLoginModel,
           ];
 
           config.archiveDatabase.autoLoadModels = false;

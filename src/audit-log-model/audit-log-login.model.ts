@@ -11,10 +11,10 @@ import {
 import { AuditLogModel } from './audit-log.model';
 
 @Table({
-  tableName: 'audit_logs_error',
+  tableName: 'audit_logs_login',
   timestamps: false,
 })
-export class AuditLogErrorModel extends Model<AuditLogErrorModel> {
+export class AuditLogLoginModel extends Model<AuditLogLoginModel> {
   @ForeignKey(() => AuditLogModel)
   @Column({
     type: DataType.UUID,
@@ -32,25 +32,18 @@ export class AuditLogErrorModel extends Model<AuditLogErrorModel> {
   id!: string;
 
   @Column({
-    type: DataType.TEXT,
+    type: DataType.STRING,
     allowNull: false,
-    field: 'error_message',
+    field: 'system',
   })
-  errorMessage!: string;
+  system!: string;
 
   @Column({
     type: DataType.STRING,
     allowNull: false,
-    field: 'error_type',
+    field: 'user_id',
   })
-  errorType!: string;
-
-  @Column({
-    type: DataType.TEXT,
-    allowNull: true,
-    field: 'stack_trace',
-  })
-  stackTrace!: string;
+  userId!: string;
 
   @CreatedAt
   @Default(DataType.NOW)
@@ -60,18 +53,4 @@ export class AuditLogErrorModel extends Model<AuditLogErrorModel> {
     field: 'created_at',
   })
   createdAt!: Date;
-
-  @Column({
-    type: DataType.STRING,
-    allowNull: true,
-    field: 'request_path',
-  })
-  requestPath!: string;
-
-  @Column({
-    type: DataType.STRING,
-    allowNull: false,
-    field: 'request_method',
-  })
-  requestMethod!: string;
 }

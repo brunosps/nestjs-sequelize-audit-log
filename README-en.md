@@ -32,14 +32,14 @@ import { SequelizeModule } from '@nestjs/sequelize'; // Your main Sequelize modu
 
 @Module({
   imports: [
-    SequelizeModule.forRoot({
+    SequelizeModule.register({
       // Your main database configuration
       // dialect, host, port, username, password, database, etc.
       // models: [YourAppModels...],
       // autoLoadModels: true,
       // synchronize: false, // Recommended false in production
     }),
-    AuditLogModule.forRoot({
+    AuditLogModule.register({
       // Tables to be audited for changes (INSERT, UPDATE, DELETE) via triggers
       // E.g.: auditedTables: ['users', 'products'],
       auditedTables: [], // Leave empty if you don't want table auditing via triggers

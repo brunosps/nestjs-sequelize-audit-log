@@ -1,85 +1,18 @@
 {
   "compilerOptions": {
-    /* Visit https://aka.ms/tsconfig to read more about this file */
-
-    /* Projects */
-    // "incremental": true,
-    // "composite": true,
-    // "tsBuildInfoFile": "./.tsbuildinfo",
-    // "disableSourceOfProjectReferenceRedirect": true,
-    // "disableSolutionSearching": true,
-    // "disableReferencedProjectLoad": true,
-
-    /* Language and Environment */
-    "target": "es2016",
-    // "lib": [],
-    // "jsx": "preserve",
-    // "libReplacement": true,
-    "experimentalDecorators": true,
+    "target": "es2018",
+    "module": "commonjs",
     "declaration": true,
-    // "declarationMap": true,
-    // "emitDeclarationOnly": true,
-    // "sourceMap": true,
-    // "inlineSourceMap": true,
-    // "noEmit": true,
-    // "outFile": "./",
-    "outDir": "dist",
-    // "removeComments": true,
-    // "importHelpers": true,
-    // "downlevelIteration": true,
-    // "sourceRoot": "",
-    // "mapRoot": "",
-    // "inlineSources": true,
-    // "emitBOM": true,
-    // "newLine": "crlf",
-    // "stripInternal": true,
-    // "noEmitHelpers": true,
-    // "noEmitOnError": true,
-    // "preserveConstEnums": true,
-    // "declarationDir": "./",
-
-    /* Modules */
-    "module": "commonjs",                                /* Specify what module code is generated. */ // Manter este se for útil
-    "rootDir": "src",                                    /* Specify the root folder within your source files. */ // Manter este se for útil
-    // "moduleResolution": "node10",
-    // "baseUrl": "./",
-    // "paths": {},
-    // "rootDirs": [],
-    // "typeRoots": [],
-    // "types": [],
-    // "allowUmdGlobalAccess": true,
-    // "moduleSuffixes": [],
-    // "resolveJsonModule": true,                        /* Enable importing .json files. */ // Exemplo de comentário útil a manter
-    "allowSyntheticDefaultImports": true,             /* Allow 'import x from y' when a module doesn't have a default export. */ // Manter este se for útil
-    "esModuleInterop": true,                             /* Emit additional JavaScript to ease support for importing CommonJS modules. This enables 'allowSyntheticDefaultImports' for type compatibility. */ // Manter este se for útil
-    // "preserveSymlinks": true,                         /* Disable resolving symlinks to their realpath. This correlates to the same flag in node. */
-    "forceConsistentCasingInFileNames": true,            /* Ensure that casing is correct in imports. */ // Manter este se for útil
-
-    /* Type Checking */
-    "strict": true,                                      /* Enable all strict type-checking options. */ // Manter este se for útil
-    // "noImplicitAny": true,                            /* Enable error reporting for expressions and declarations with an implied 'any' type. */
-    // "strictNullChecks": true,                         /* When type checking, take 'null' and 'undefined' into account. */
-    // "strictFunctionTypes": true,                      /* When assigning functions, check to ensure parameters and the return values are subtype-compatible. */
-    // "strictBindCallApply": true,
-    // "strictPropertyInitialization": true,
-    // "noImplicitThis": true,
-    // "useUnknownInCatchVariables": true,
-    // "alwaysStrict": true,
-    // "noUnusedLocals": true,
-    // "noUnusedParameters": true,
-    // "exactOptionalPropertyTypes": true,
-    // "noImplicitReturns": true,
-    // "noFallthroughCasesInSwitch": true,
-    // "noUncheckedIndexedAccess": true,                 /* Add 'undefined' to a type when accessed using an index. */
-    // "noImplicitOverride": true,                       /* Ensure overriding members in derived classes are marked with an override modifier. */
-    // "noPropertyAccessFromIndexSignature": true,
-    // "allowUnusedLabels": true,
-    // "allowUnreachableCode": true,
-
-    /* Completeness */
-    // "skipDefaultLibCheck": true,
-    "skipLibCheck": true
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "outDir": "./dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"]
   },
-  "include": ["src/**/*"], // Manter este
-  "exclude": ["node_modules", "dist", ".eslintrc.js", "scripts"] // Manter este e adicionar outros se necessário
+  "include": ["src"],
+  "exclude": ["node_modules", "**/__tests__/*", "dist"]
 }

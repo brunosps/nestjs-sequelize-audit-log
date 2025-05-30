@@ -1,96 +1,165 @@
-import { Inject, Injectable, NestMiddleware } from '@nestjs/common';
+import { Inject, Injectable, NestMiddleware, Optional } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { InjectModel } from '@nestjs/sequelize';
-import { v4 as uuid } from 'uuid';
+import { CreationAttributes } from 'sequelize';
+import { v4 as uuidv4 } from 'uuid';
 import { AuditLogModel } from '../../audit-log-model/audit-log.model';
 import { AuditLogRequestModel } from '../../audit-log-model/audit-log-request.model';
 import { sanitizePayload } from '../utils/sanitizePayload';
-import { responseCache } from '../../utils/response-cache.util';
+import {
+  AuditLogGetInfoFromRequest,
+  AuditLogRequestAuthRoute,
+} from '../../interfaces/audit-log-module-options.interface';
+import { extractClientIp } from '../../utils/ip';
+import { AuditLogLoginModel } from '../../audit-log-model/audit-log-login.model';
 
 @Injectable()
 export class AuditLogRequestLoggingMiddleware implements NestMiddleware {
-  private responseBodyCache = responseCache;
-
   constructor(
-    @InjectModel(AuditLogModel) private auditLogModel: typeof AuditLogModel,
+    @InjectModel(AuditLogModel)
+    private auditLogModel: typeof AuditLogModel,
     @InjectModel(AuditLogRequestModel)
     private auditLogRequestModel: typeof AuditLogRequestModel,
-    @Inject('AUTH_ROUTE') private authRoute: string, // Changed type to string
+    @InjectModel(AuditLogLoginModel)
+    private auditLogLoginModel: typeof AuditLogLoginModel,
+    @Optional()
+    @Inject('AUTH_ROUTES')
+    private authRoutes: AuditLogRequestAuthRoute[],
+    @Optional()
+    @Inject('GET_USERID_FUNCTION')
+    private getUserIdFn?: AuditLogGetInfoFromRequest,
+    @Optional()
+    @Inject('GET_IPADDRESS_FUNCTION')
+    private getIpAddressFn?: AuditLogGetInfoFromRequest,
   ) {}
 
-  use(req: Request, res: Response, next: NextFunction): void {
+  async use(req: Request, res: Response, next: NextFunction) {
     const start = Date.now();
 
     const payload =
       req.body && Object.keys(req.body).length > 0
         ? JSON.stringify(sanitizePayload(req.body))
-        : null;
-
-    // Gera um ID único para esta requisição
-    const requestId = uuid();
-
-    // Guarda os chunks em um array
-    const responseChunks: Buffer[] = [];
+        : '';
 
     const originalWrite = res.write;
     const originalEnd = res.end;
+    const responseChunks: Buffer[] = [];
 
-    // Override para capturar os dados da resposta
-    res.write = (chunk: any, ...args: any[]): boolean => {
+    res.write = function (chunk: any, encoding?: any, callback?: any): boolean {
       if (chunk) {
-        // Converte para Buffer se necessário
-        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        responseChunks.push(buffer);
+        responseChunks.push(
+          Buffer.isBuffer(chunk)
+            ? chunk
+            : Buffer.from(
+                chunk,
+                typeof encoding === 'string'
+                  ? (encoding as BufferEncoding)
+                  : 'utf8',
+              ),
+        );
       }
-      return originalWrite.apply(res, [chunk, ...args] as any);
+      return originalWrite.call(this, chunk, encoding, callback);
     };
 
-    // Use an arrow function for res.end to preserve 'this' context of the middleware
-    res.end = (...args: any[]): Response => {
-      const chunk = args[0];
+    res.end = function (chunk?: any, encoding?: any, callback?: any): any {
       if (chunk) {
-        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        responseChunks.push(buffer);
+        responseChunks.push(
+          Buffer.isBuffer(chunk)
+            ? chunk
+            : Buffer.from(
+                chunk,
+                typeof encoding === 'string'
+                  ? (encoding as BufferEncoding)
+                  : 'utf8',
+              ),
+        );
       }
+      return originalEnd.call(this, chunk, encoding, callback);
+    };
 
-      const bufferBody = Buffer.concat(responseChunks);
-      const responseBody =
-        bufferBody.length > 0 ? bufferBody.toString('utf-8') : '';
+    res.on('finish', async () => {
+      const duration = Date.now() - start;
+      const responseBody = Buffer.concat(responseChunks).toString('utf8');
+      try {
+        const isLoginPath = this.isLoginPath(req);
+        const data = {
+          id: String(req['user']?.id || '_'),
+          ip: extractClientIp(req),
+          logType: isLoginPath ? 'LOGIN' : 'REQUEST',
+        };
 
-      setTimeout(async () => {
-        try {
-          const log = await (this.auditLogModel as any).create({
-            id: uuid(),
-            // Use this.authRoute directly as it's now a string
-            logType: req.path === this.authRoute ? 'LOGIN' : 'REQUEST',
-            ipAddress: req.ip || 'unknown',
-            userId: req.user?.id || 'anonymous',
-            createdAt: new Date(),
-          });
-
-          // Cria log de requisição
-          await (this.auditLogRequestModel as any).create({
-            id: uuid(),
-            logId: log.id,
-            method: req.method,
-            url: req.originalUrl || req.url,
-            headers: JSON.stringify(req.headers),
-            body: payload || undefined,
-            userAgent: req.headers['user-agent'] || undefined,
-            requestTime: start,
-            responseTime: Date.now(),
-            responseStatus: res.statusCode,
-            responseBody: responseBody || undefined,
-            createdAt: new Date(),
-          });
-        } catch (error) {
-          console.error('Erro ao salvar log de requisição:', error);
+        if (this.getUserIdFn) {
+          data.id = this.getUserIdFn(req);
         }
-      }, 0);
 
-      return originalEnd.apply(res, args as any);
-    };
+        if (isLoginPath && isLoginPath.getUserId) {
+          data.id = isLoginPath.getUserId(JSON.parse(responseBody));
+        }
+
+        if (this.getIpAddressFn) {
+          data.ip = this.getIpAddressFn(req);
+        }
+
+        const log = await this.auditLogModel.create({
+          id: uuidv4(),
+          logType: data.logType,
+          ipAddress: data.ip,
+          userId: data.id,
+          createdAt: new Date(),
+        } as CreationAttributes<AuditLogModel>);
+
+        if (isLoginPath) {
+          await this.auditLogLoginModel.create({
+            id: uuidv4(),
+            userId: data.id,
+            logId: log.id,
+            system: isLoginPath.system,
+          } as CreationAttributes<AuditLogLoginModel>);
+        }
+
+        if (!isLoginPath || isLoginPath.registerRequest) {
+          await this.auditLogRequestModel.create({
+            id: uuidv4(),
+            logId: log.id,
+            requestMethod: req.method,
+            requestURL: req.originalUrl,
+            responseStatus: res.statusCode,
+            responseSize: parseInt(res.get('Content-Length') || '0', 10),
+            duration: duration,
+            payload: payload,
+            responseBody: responseBody ? responseBody : undefined,
+            createdAt: new Date(),
+          } as CreationAttributes<AuditLogRequestModel>);
+        }
+      } catch (error) {
+        console.error('Error logging request:', error);
+      }
+    });
 
     next();
+  }
+
+  private isLoginPath(req: Request): AuditLogRequestAuthRoute | false {
+    if (
+      !this.authRoutes ||
+      !Array.isArray(this.authRoutes) ||
+      this.authRoutes.length === 0
+    ) {
+      return false;
+    }
+    const foundRoute = this.authRoutes.find((route) => {
+      if (
+        route &&
+        typeof route.path === 'string' &&
+        Array.isArray(route.methods)
+      ) {
+        return (
+          req.originalUrl === route.path && route.methods.includes(req.method)
+        );
+      }
+      return false;
+    });
+
+    return foundRoute || false;
   }
 }

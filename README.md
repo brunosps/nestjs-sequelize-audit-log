@@ -32,45 +32,71 @@ import { SequelizeModule } from '@nestjs/sequelize'; // Seu módulo Sequelize pr
 
 @Module({
   imports: [
-    SequelizeModule.forRoot({
+    SequelizeModule.register({
       // Configuração do seu banco de dados principal
       // dialect, host, port, username, password, database, etc.
       // models: [YourAppModels...],
       // autoLoadModels: true,
       // synchronize: false, // Recomendado false em produção
     }),
-    AuditLogModule.forRoot({
+    AuditLogModule.register({
       // Tabelas que terão as alterações auditadas (INSERT, UPDATE, DELETE)
       // Ex: auditedTables: ['users', 'products'],
-      auditedTables: [], // Deixe vazio se não quiser auditoria de tabelas por triggers
+      auditedTables: ['your_table_name_1', 'your_table_name_2'], // Exemplo genérico
+
+      // Habilita logs de debug para triggers de auditoria (opcional)
+      // Útil para desenvolvimento e solução de problemas com triggers
+      enableTriggerDebugLog: false, // Default: false
 
       // Configurações para o módulo de log de erros
       enableErrorLogging: true, // Habilita o filtro global de exceções para logar erros
 
       // Configurações para o módulo de log de requisições HTTP
       enableRequestLogging: true, // Habilita o middleware para logar todas as requisições
-      // Rota de autenticação para ser logada como 'LOGIN' em vez de 'REQUEST'
-      authRoute: '/auth/login', // Ou o caminho da sua rota de login
+      
+      // Rotas de autenticação para tratamento especial no log de requisições
+      // Estas rotas são identificadas como operações de login/autenticação e geram logs específicos
+      authRoutes: [
+        {
+          path: '/auth/login', // Caminho da rota de autenticação
+          methods: ['POST'], // Métodos HTTP a serem considerados (ex: ['POST', 'GET'])
+          getUserId: (response) => response.user?.id, // Função para extrair o ID do usuário da RESPOSTA da requisição
+          system: 'YOUR_SYSTEM_NAME', // Identificador do sistema para rastreamento
+          registerRequest: true, // Se true, registra a requisição; se false, registra apenas o login
+        }
+      ],
+
+      // Função global para obter o ID do usuário a partir da requisição
+      // Esta função será usada se uma rota específica em `authRoutes` não tiver seu próprio `getUserId`
+      // ou para logs que não são de `authRoutes` (ex: logs de erro, eventos customizados sem getUserId próprio)
+      getUserId: (req) => {
+        return req['user']?.id || 'anonymous_user'; // Exemplo genérico
+      },
+
+      // Função global para obter o endereço IP a partir da requisição (opcional)
+      // Se não fornecida, será usado '0.0.0.0' como padrão
+      getIpAddress: (req) => {
+        return req.ip || req.connection?.remoteAddress || '0.0.0.0'; // Exemplo genérico
+      },
 
       // Configurações para o módulo de log de integrações
-      enableIntegrationLogging: true, // Habilita interceptor para HttpService e AuditLogSoapClientService
+      enableIntegrationLogging: false, // Habilita interceptor para HttpService e AuditLogSoapClientService
 
       // Configurações para o módulo de arquivamento de logs
-      enableArchive: true, // Habilita a tarefa de arquivamento
-      archiveOptions: {
-        retentionPeriod: 30, // Dias para manter os logs antes de arquivar (ex: 30 dias)
+      // Para habilitar, forneça um objeto de configuração. Para desabilitar, omita ou passe undefined.
+      enableArchive: {
+        retentionPeriod: 7, // Exemplo: manter logs por 7 dias
         archiveDatabase: { // Configuração do banco de dados de arquivamento
           dialect: 'postgres', // ou 'mysql', 'sqlite', etc.
-          host: process.env.ARCHIVE_DB_HOST,
-          port: parseInt(process.env.ARCHIVE_DB_PORT || '5432'),
-          username: process.env.ARCHIVE_DB_USERNAME,
-          password: process.env.ARCHIVE_DB_PASSWORD,
-          database: process.env.ARCHIVE_DB_NAME,
-          // synchronize: true, // Cuidado em produção, pode apagar dados. Use migrations.
-          // autoLoadModels: true, // Para carregar os modelos de log no archive
+          host: 'your_archive_db_host', // Placeholder
+          port: 5432, // Placeholder
+          username: 'your_archive_db_user', // Placeholder
+          password: 'your_archive_db_password', // Placeholder
+          database: 'your_archive_db_name', // Placeholder
+          synchronize: false, // Recomendado false em produção, use migrations
         },
         batchSize: 1000, // Quantidade de registros a processar por lote no arquivamento
-        cronTime: '0 1 * * *', // Cron para executar o arquivamento (ex: todo dia à 1h da manhã)
+        // cronTime: '0 2 * * *', // Exemplo: todo dia às 2h da manhã
       }
     }),
   ],
@@ -119,11 +145,23 @@ Se estiver usando um banco de dados de arquivamento separado, você precisará e
 ### Log de Alterações no Banco de Dados (Triggers)
 
 Se `auditedTables` for configurado com nomes de tabelas, a biblioteca tentará criar triggers (gatilhos) nessas tabelas para capturar automaticamente eventos de INSERT, UPDATE e DELETE.
+
 **Importante:** O usuário do banco de dados configurado no Sequelize precisa ter permissões para criar triggers. Esta funcionalidade é mais robusta em bancos como MySQL e PostgreSQL.
+
+**Configuração de Debug:** Se `enableTriggerDebugLog` estiver habilitado, a biblioteca produzirá logs detalhados sobre a criação e execução dos triggers, útil para desenvolvimento e resolução de problemas.
 
 ### Log de Requisições HTTP
 
-O log de requisições HTTP é habilitado automaticamente se `enableRequestLogging` for `true`. Todas as requisições HTTP de entrada serão registradas.
+O log de requisições HTTP é habilitado automaticamente se `enableRequestLogging` for `true`. Todas as requisições HTTP de entrada serão registradas no modelo `AuditLogRequestModel`.
+
+### Log de Autenticação/Login
+
+Quando `authRoutes` são configuradas, requisições que correspondam aos caminhos e métodos especificados serão tratadas como operações de autenticação. Além do log da requisição HTTP, será criado também um registro específico de login no modelo `AuditLogLoginModel`. Este registro especial contém informações como:
+
+- Sistema de origem (campo `system`)
+- ID do usuário extraído da resposta (usando a função `getUserId` específica da rota)
+- Sucesso ou falha da tentativa de login
+- Detalhes adicionais da operação
 
 ### Log de Erros
 
@@ -154,34 +192,97 @@ export class SeuServico {
 
 ### Log de Eventos Customizados
 
-Você pode registrar eventos customizados usando o decorador `AuditLogEvent` em métodos de seus serviços:
+Você pode registrar eventos customizados de duas maneiras:
 
-```typescript
-import { Injectable } from '@nestjs/common';
-import { AuditLogEvent } from '@brunosps00/audit-log'; // Verifique o caminho correto da importação
+1.  **Usando o decorador `AuditLogEvent`**: Aplique este decorador em métodos de seus serviços para logar automaticamente a execução do método.
 
-@Injectable()
-export class SeuServico {
-  @AuditLogEvent({
-    eventType: 'ACAO_USUARIO_ESPECIFICA',
-    // A descrição pode ser uma string ou uma função que recebe os argumentos do método, o resultado ou o erro
-    eventDescription: (context, result, error, args) => `Usuário ${args[0]} realizou uma ação específica.`,
-    // getDetails é opcional e permite adicionar um payload JSON com detalhes do evento
-    getDetails: (context, result, error, args) => ({ 
-        userId: args[0], 
-        parametroAdicional: args[1],
-        resultado: result, // O resultado do método performUserAction
-        erro: error // O erro, se o método lançar uma exceção
-    })
-  })
-  async performUserAction(userId: string, dadosAdicionais: any) {
-    // Sua lógica aqui
-    if (!userId) throw new Error('ID do usuário é obrigatório');
-    return { success: true, data: `Ação para ${userId} com ${dadosAdicionais}` };
-  }
-}
-```
-O `context` fornecido às funções `eventDescription` e `getDetails` é o `ExecutionContext` do NestJS, permitindo acesso à requisição, etc.
+    ```typescript
+    import { Injectable } from '@nestjs/common';
+    import { AuditLogEvent, AuditLogService } from '@brunosps00/audit-log'; 
+    // import { ActionParams, ActionResult } from './dto/action.dto'; // Exemplo de DTOs
+
+    @Injectable()
+    export class MyCustomService { // Nome de serviço genérico
+      constructor(
+        private readonly auditLogService: AuditLogService,
+      ) {}
+
+      @AuditLogEvent({
+        eventType: "CUSTOM_ACTION_PERFORMED", // Tipo de evento genérico
+        eventDescription: "A custom action was performed in the system.", // Descrição genérica
+        getDetails: (args, result, error) => ({
+          actionParameters: args[0], 
+          actionResult: result,   
+          actionError: error 
+        }),
+        getUserId: (args, result, error) => {
+          return args[0]?.requestingUserId || 'unknown_system_user'; // Exemplo genérico
+        }
+      })
+      async performAction(
+        actionParams: any, // Exemplo: ActionParams
+      ): Promise<any> { // Exemplo: ActionResult
+        // Lógica de negócios do seu serviço
+        // Exemplo: const data = await this.someRepository.find(actionParams.id);
+
+        // Exemplo de log manual dentro do método, se necessário
+        this.auditLogService.logEvent({
+          type: 'CUSTOM_ACTION_STEP',
+          description: 'A specific step within performAction was completed.',
+          details: { params: actionParams, stepData: { info: 'Step successful' } },
+          userId: actionParams?.requestingUserId || 'unknown_system_user'
+        });
+
+        return { success: true, data: "Action completed" }; // Exemplo de resultado
+      }
+    }
+    ```
+
+    **Sobre as funções `eventDescription`, `getDetails` e `getUserId` no `@AuditLogEvent`:**
+    *   `eventDescription`: Pode ser uma string ou uma função `(args, result, error) => string`.
+    *   `getDetails`: Uma função `(args, result, error) => Record<string, any>`.
+    *   `getUserId`: Uma função `(args, result, error) => string`.
+    *   `args`: Array de argumentos passados ao método decorado.
+    *   `result`: O valor retornado pelo método decorado (disponível apenas se o método concluir com sucesso).
+    *   `error`: O erro lançado pelo método decorado (disponível apenas se o método lançar uma exceção).
+
+2.  **Usando o `AuditLogService` diretamente**: Você pode injetar o `AuditLogService` em seus serviços e chamar o método `logEvent` para registrar eventos manualmente em qualquer ponto do seu código.
+
+    ```typescript
+    import { Injectable } from '@nestjs/common';
+    import { AuditLogService } from '@brunosps00/audit-log';
+
+    @Injectable()
+    export class AnotherCustomService { // Nome de serviço genérico
+      constructor(private readonly auditLogService: AuditLogService) {}
+
+      async anotherComplexOperation(userId: string, operationData: any) {
+        // ... alguma lógica ...
+
+        this.auditLogService.logEvent({
+          type: 'COMPLEX_OPERATION_STEP_A',
+          description: 'Step A of complex operation completed.',
+          userId: userId,
+          details: { 
+            inputData: operationData,
+            status: 'Step A OK'
+          },
+        });
+
+        // ... restante da lógica ...
+        if (operationData.someErrorCondition) {
+            this.auditLogService.logEvent({
+                type: 'COMPLEX_OPERATION_FAILURE_B',
+                description: 'Failure at Step B of complex operation.',
+                userId: userId,
+                details: { failureReason: 'Error condition met', input: operationData },
+            });
+            throw new Error("Failure at Step B");
+        }
+        return { finalResult: 'Operation successful' };
+      }
+    }
+    ```
 
 ### Arquivamento de Logs
 
@@ -194,6 +295,7 @@ A biblioteca cria os seguintes modelos Sequelize para armazenar os logs de audit
 *   `AuditLogModel`: Entrada principal do log (comum a todos os tipos de log)
 *   `AuditLogEntityModel`: Detalhes de alterações em entidades do banco de dados (usado por triggers)
 *   `AuditLogRequestModel`: Detalhes de requisições HTTP
+*   `AuditLogLoginModel`: Detalhes específicos de operações de login/autenticação
 *   `AuditLogErrorModel`: Detalhes de erros da aplicação
 *   `AuditLogEventModel`: Detalhes de eventos customizados
 *   `AuditLogIntegrationModel`: Detalhes de chamadas de integração (REST/SOAP)

@@ -6,6 +6,7 @@ import { AuditLogErrorModel } from './audit-log-error.model';
 import { AuditLogEventModel } from './audit-log-event.model';
 import { AuditLogModel } from './audit-log.model';
 import { AuditLogIntegrationModel } from './audit-log-integration.model';
+import { AuditLogLoginModel } from './audit-log-login.model';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { AuditLogIntegrationModel } from './audit-log-integration.model';
       AuditLogModel,
       AuditLogEntityModel,
       AuditLogRequestModel,
+      AuditLogLoginModel,
       AuditLogErrorModel,
       AuditLogEventModel,
       AuditLogIntegrationModel,

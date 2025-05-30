@@ -1,7 +1,5 @@
-// Importação necessária para os decoradores
 import 'reflect-metadata';
 
-// Exportações de módulos
 export * from './audit-log.module';
 export * from './interfaces/audit-log-module-options.interface';
 export * from './audit-log-model/audit-log.model';
@@ -11,9 +9,14 @@ export * from './audit-log-model/audit-log-event.model';
 export * from './audit-log-model/audit-log-integration.model';
 export * from './audit-log-model/audit-log-entity.model';
 
-// Serviços e utilitários
 export * from './services/audit-log.service';
 export * from './utils/response-cache.util';
 export * from './decorators/sequelize-decorators';
 
-// Exportações adicionais conforme necessário para uso público da biblioteca
+export * from './audit-log-event/decorators/audit-log-event.decorator';
+export * from './audit-log-event/services/audit-log-event.service';
+export * from './audit-log-event/audit-log-event.module';
+export * from './services/audit-log.service';
+export * from './audit-log.module';
+export * from './interfaces/audit-log-module-options.interface';
+export * from './audit-log-integration/middlewares/audit-log-context.middleware';

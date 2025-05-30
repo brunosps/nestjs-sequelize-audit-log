@@ -3,12 +3,16 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
+  Optional,
+  Inject,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { Reflector } from '@nestjs/core';
 import { AuditLogEventService } from '../services/audit-log-event.service';
 import { AUDIT_LOG_EVENT_METADATA } from '../decorators/audit-log-event.decorator';
+import { AuditLogGetInfoFromRequest } from '../../interfaces/audit-log-module-options.interface';
+import { extractClientIp } from '../../utils/ip';
 
 interface EventMetadata {
   type: string;
@@ -21,6 +25,12 @@ export class AuditLogEventInterceptor implements NestInterceptor {
   constructor(
     private readonly reflector: Reflector,
     private readonly auditLogEventService: AuditLogEventService,
+    @Optional()
+    @Inject('GET_USERID_FUNCTION')
+    private getUserIdFn?: AuditLogGetInfoFromRequest,
+    @Optional()
+    @Inject('GET_IPADDRESS_FUNCTION')
+    private getIpAddressFn?: AuditLogGetInfoFromRequest,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
@@ -33,9 +43,19 @@ export class AuditLogEventInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    const request = context.switchToHttp().getRequest();
-    const userId = request.user?.id;
-    const ipAddress = request.ip;
+    const req = context.switchToHttp().getRequest();
+    const userInformation = {
+      id: String(req['user']?.id || '_'),
+      ip: extractClientIp(req),
+    };
+
+    if (this.getUserIdFn) {
+      userInformation.id = this.getUserIdFn(req);
+    }
+
+    if (this.getIpAddressFn) {
+      userInformation.ip = this.getIpAddressFn(req);
+    }
 
     return next.handle().pipe(
       tap({
@@ -44,16 +64,15 @@ export class AuditLogEventInterceptor implements NestInterceptor {
           const eventDetailsData = eventMetadata.details
             ? eventMetadata.details(context, result)
             : undefined;
-          this.auditLogEventService.logEvent(
-            eventMetadata.type,
+          this.auditLogEventService.logEvent({
+            type: eventMetadata.type,
             description,
-            eventDetailsData,
-            userId,
-            ipAddress,
-          );
+            details: eventDetailsData,
+            userId: userInformation.id,
+            ipAddress: userInformation.ip,
+          });
         },
         error: (error) => {
-          // Optionally log events on error too
           const description = eventMetadata.description(
             context,
             undefined,
@@ -62,13 +81,13 @@ export class AuditLogEventInterceptor implements NestInterceptor {
           const eventDetailsData = eventMetadata.details
             ? eventMetadata.details(context, undefined, error)
             : undefined;
-          this.auditLogEventService.logEvent(
-            `${eventMetadata.type}_ERROR`, // Distinguish error events
+          this.auditLogEventService.logEvent({
+            type: `${eventMetadata.type}_ERROR`,
             description,
-            eventDetailsData, // Or specific error details
-            userId,
-            ipAddress,
-          );
+            details: eventDetailsData,
+            userId: userInformation.id,
+            ipAddress: userInformation.ip,
+          });
         },
       }),
     );

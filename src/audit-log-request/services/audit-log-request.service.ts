@@ -1,15 +1,12 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { AuditLogModelModule } from '../../audit-log-model/audit-log-model.module';
+import { Injectable } from '@nestjs/common';
+import { RequestIdInterceptor } from '../interceptors/request-id.interceptor';
 
 @Injectable()
 export class AuditLogRequestService {
-  constructor(
-    @Inject('AUTH_ROUTE') private readonly config: any,
-    private readonly modelModule: AuditLogModelModule,
-  ) {}
+  constructor() {}
 
-  async logRequest(method: string, path: string, data: any) {
-    // Implementação do log de request
-    console.log('Logging request:', { method, path, data });
+  async getRequestId() {
+    const context = RequestIdInterceptor.getContext();
+    return context?.requestId;
   }
 }

@@ -1,15 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { v4 as uuidv4 } from 'uuid';
+import { CreationAttributes } from 'sequelize';
 
 import { AuditLogEventModel } from '../../audit-log-model/audit-log-event.model';
 import { AuditLogModel } from '../../audit-log-model/audit-log.model';
 
-type AuditLogEventLogType = {
+export type AuditLogEventLogType = {
   type: string;
   description: string;
   userId?: string;
-  userIp?: string;
+  ipAddress?: string;
   details?: Record<string, any>;
 };
 
@@ -23,28 +24,26 @@ export class AuditLogEventService {
     private readonly auditLogEventModel: typeof AuditLogEventModel,
   ) {}
 
-  async logEvent(
-    eventType: string,
-    eventDescription: string,
-    eventDetails: any,
-    userId?: string,
-    ipAddress?: string,
-  ) {
-    const log = await (this.auditLogModel as any).create({
+  async logEvent({
+    type,
+    description,
+    userId,
+    ipAddress,
+    details,
+  }: AuditLogEventLogType) {
+    const log = await this.auditLogModel.create({
       id: uuidv4(),
       logType: 'EVENT',
-      userId: userId || 'system', // Provide default
-      ipAddress: ipAddress || 'unknown', // Provide default
-      createdAt: new Date(),
-    });
+      userId: userId || 'system',
+      ipAddress: ipAddress || '0.0.0.0',
+    } as CreationAttributes<AuditLogModel>);
 
-    await (this.auditLogEventModel as any).create({
+    await this.auditLogEventModel.create({
       id: uuidv4(),
       logId: log.id,
-      eventType,
-      eventDescription,
-      eventDetails: JSON.stringify(eventDetails),
-      // createdAt will be handled by Sequelize/database
-    } as any); // Cast to any to satisfy missing properties like createdAt
+      eventType: type,
+      eventDescription: description,
+      eventDetails: JSON.stringify(details),
+    } as CreationAttributes<AuditLogEventModel>);
   }
 }

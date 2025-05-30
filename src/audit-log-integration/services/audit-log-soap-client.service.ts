@@ -1,4 +1,3 @@
-// src/services/soap-client.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { Client, createClientAsync } from 'soap';
 import { v4 as uuidv4 } from 'uuid';
@@ -19,11 +18,10 @@ export class AuditLogSoapClientService {
 
   async createClient(wsdl: string, integrationName: string): Promise<Client> {
     const client = await createClientAsync(wsdl);
-    let startTime: number; // Variável para armazenar o tempo de início da requisição
-    let requestXml: string; // Variável para armazenar o XML da requisição
+    let startTime: number;
+    let requestXml: string;
 
     client.on('request', (xml: string, eid: string) => {
-      // O 'eid' (exchangeId) pode ser usado para correlacionar request/response/error
       startTime = Date.now();
       requestXml = xml;
       this.logger.debug(`SOAP Request [${eid}] to ${integrationName}: ${xml}`);
@@ -36,10 +34,10 @@ export class AuditLogSoapClientService {
       );
       this.saveLog({
         integrationName,
-        method: 'SOAP_CALL', // Pode ser mais específico se o método estiver disponível
+        method: 'SOAP_CALL',
         requestPayload: requestXml,
         responsePayload: responseXml,
-        status: '200', // Assumindo sucesso
+        status: '200',
         duration,
       }).catch((err) =>
         this.logger.error('Failed to save SOAP success log', err),
@@ -57,8 +55,8 @@ export class AuditLogSoapClientService {
         integrationName,
         method: 'SOAP_CALL',
         requestPayload: requestXml,
-        responsePayload: JSON.stringify(errorPayload), // Garante que seja uma string
-        status: '500', // Assumindo erro de servidor
+        responsePayload: JSON.stringify(errorPayload),
+        status: '500',
         duration,
       }).catch((err) =>
         this.logger.error('Failed to save SOAP error log', err),
