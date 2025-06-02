@@ -64,7 +64,9 @@ export class AuditLogArchiveService {
     const primaryKey = model.primaryKeyAttribute;
 
     while (true) {
-      const records = await (model as ModelCtor<Model<any, any>>).findAll({
+      const records: Record<string, any>[] = await (
+        model as ModelCtor<Model<any, any>>
+      ).findAll({
         where: {
           createdAt: {
             [Op.lt]: cutoffDate,
@@ -85,13 +87,9 @@ export class AuditLogArchiveService {
       );
 
       try {
-        // Cast records to any[] to satisfy bulkCreate, as raw: true returns plain objects
-        await (archiveModel as ModelCtor<Model<any, any>>).bulkCreate(
-          records as any[],
-          {
-            ignoreDuplicates: true,
-          },
-        );
+        await (archiveModel as ModelCtor<Model<any, any>>).bulkCreate(records, {
+          ignoreDuplicates: true,
+        });
 
         const idsToDelete = records.map((r: any) => r[primaryKey]);
         await (model as ModelCtor<Model<any, any>>).destroy({
@@ -109,60 +107,7 @@ export class AuditLogArchiveService {
           `Error archiving data for table ${tableName}:`,
           error,
         );
-        // Decide if you want to break or continue with other tables/batches
         break;
-      }
-    }
-  }
-
-  private async archiveData(
-    model: ModelCtor<Model<any, any>>,
-    daysToKeep: number,
-    archiveTableSuffix: string,
-  ) {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
-    const recordsToArchive = await (model as any).findAll({
-      where: {
-        createdAt: {
-          [Op.lt]: cutoffDate,
-        },
-      },
-      limit: this.config.batchSize || 1000,
-      order: [['createdAt', 'ASC']],
-    });
-
-    if (recordsToArchive.length > 0) {
-      const archiveTableName = `${(model as any).tableName}_${archiveTableSuffix}`;
-      // Ensure you are using the archiveSequelize instance for archive models
-      const archiveModelInstance =
-        this.archiveSequelize.model(archiveTableName);
-
-      if (archiveModelInstance) {
-        // recordsToArchive are already model instances, map to JSON
-        await (archiveModelInstance as ModelCtor<Model<any, any>>).bulkCreate(
-          recordsToArchive.map((record: Model<any, any>) => record.toJSON()),
-          { ignoreDuplicates: true },
-        );
-        // Add deletion logic for the main database if needed
-        const idsToDelete = recordsToArchive.map(
-          (r: any) => r[(model as any).primaryKeyAttribute || 'id'],
-        );
-        await model.destroy({
-          where: {
-            [(model as any).primaryKeyAttribute || 'id']: {
-              [Op.in]: idsToDelete,
-            },
-          },
-        });
-        this.logger.log(
-          `Archived and deleted ${idsToDelete.length} records from ${model.tableName} (via archiveData).`,
-        );
-      } else {
-        this.logger.warn(
-          `Archive model for ${archiveTableName} not found in archiveSequelize instance.`,
-        );
       }
     }
   }

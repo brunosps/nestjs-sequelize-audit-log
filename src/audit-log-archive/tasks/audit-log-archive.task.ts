@@ -1,16 +1,35 @@
-import { Injectable } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { SchedulerRegistry } from '@nestjs/schedule';
+import { CronJob } from 'cron';
 
 import { AuditLogArchiveService } from '../services/audit-log-archive.service';
 
 @Injectable()
 export class AuditLogArchiveTask {
-  constructor(private readonly archiveService: AuditLogArchiveService) {}
+  private readonly logger = new Logger(AuditLogArchiveTask.name);
 
-  @Cron(CronExpression.EVERY_DAY_AT_1AM)
-  async handleArchiving() {
-    console.log('Starting scheduled audit log archiving...');
-    await this.archiveService.execute();
-    console.log('Scheduled audit log archiving completed.');
+  onModuleInit() {
+    const job = new CronJob(
+      this.archiveCronSchedule,
+      this.handleArchiving,
+      null,
+      true,
+      'America/Sao_Paulo',
+    );
+    this.schedulerRegistry.addCronJob('AuditLogArchiveTask', job);
+    job.start();
   }
+
+  constructor(
+    private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly archiveService: AuditLogArchiveService,
+    @Inject('ARCHIVE_CRON_SCHEDULE')
+    private readonly archiveCronSchedule: string,
+  ) {}
+
+  handleArchiving = async () => {
+    this.logger.log('Starting scheduled audit log archiving...');
+    await this.archiveService.execute();
+    this.logger.log('Scheduled audit log archiving completed.');
+  };
 }

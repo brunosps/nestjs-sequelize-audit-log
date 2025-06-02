@@ -25,12 +25,17 @@ export interface AuditLogArchiveConfig {
   retentionPeriod: number;
   archiveDatabase: SequelizeModuleOptions;
   batchSize?: number;
+  archiveCronSchedule: string;
 }
 
 @Module({})
 export class AuditLogArchiveModule {
   static register(config: AuditLogArchiveConfig): DynamicModule {
     const providers = [
+      {
+        provide: 'ARCHIVE_CRON_SCHEDULE',
+        useValue: config.archiveCronSchedule,
+      },
       {
         provide: 'AUDIT_LOG_CONFIG',
         useValue: config,
