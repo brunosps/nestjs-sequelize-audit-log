@@ -21,15 +21,16 @@
     "prepublishOnly": "npm run build",
     "pkgfix": "npm pkg fix",
     "test": "echo \"Sem testes ainda\" && exit 0",
-    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
+    "lint:fix": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "format": "prettier --write \"src/**/*.ts\""
   },
   "dependencies": {
     "fs-extra": "^11.3.0",
+    "sequelize": "^6.35.1",
+    "sequelize-typescript": "^2.1.5",
     "soap": "^1.1.11",
-    "uuid": "^9.0.1",
-    "sequelize": "^6.12.0",
-    "sequelize-typescript": "^2.1.0"
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@nestjs/axios": "^3.0.1",
@@ -46,7 +47,10 @@
     "axios": "^1.6.2",
     "eslint": "^8.0.0",
     "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-prettier": "^5.0.0",
+    "eslint-plugin-simple-import-sort": "^10.0.0",
+    "eslint-plugin-unused-imports": "^3.2.0",
     "express": "^4.18.2",
     "prettier": "^3.0.0",
     "reflect-metadata": "^0.1.13",

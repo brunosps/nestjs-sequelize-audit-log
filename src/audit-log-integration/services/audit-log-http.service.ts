@@ -1,21 +1,7 @@
-import {
-  Injectable,
-  OnModuleInit,
-  Logger,
-  Optional,
-  Inject,
-} from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import {
-  AxiosRequestConfig,
-  AxiosResponse,
-  InternalAxiosRequestConfig,
-} from 'axios';
-import { InjectModel } from '@nestjs/sequelize';
-import { v4 as uuidv4 } from 'uuid';
-import { CreationAttributes } from 'sequelize';
-import { AuditLogModel } from '../../audit-log-model/audit-log.model';
-import { AuditLogIntegrationModel } from '../../audit-log-model/audit-log-integration.model';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+
 import { AuditLogService } from '../../audit-log-core/services/audit-log.service';
 
 export type AuditLogHttpIntegrationType = {

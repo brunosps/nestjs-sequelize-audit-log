@@ -1,6 +1,7 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
-import type { Sequelize, Model, ModelCtor } from 'sequelize-typescript';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Op } from 'sequelize';
+import type { Model, ModelCtor, Sequelize } from 'sequelize-typescript';
+
 import { AuditLogArchiveConfig } from '../audit-log-archive.module';
 
 @Injectable()

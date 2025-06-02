@@ -1,8 +1,15 @@
 import { Request } from 'express';
-import { ParsedQs } from 'qs';
 import { ParamsDictionary } from 'express-serve-static-core';
+import { ParsedQs } from 'qs';
 
 import { AuditLogArchiveConfig } from '../audit-log-archive/audit-log-archive.module';
+
+export type AuditLogRequestUser = {
+  user: {
+    id: string;
+    email: string;
+  };
+};
 
 export type AuditLogRequest = Request<
   ParamsDictionary,
@@ -10,7 +17,9 @@ export type AuditLogRequest = Request<
   any,
   ParsedQs,
   Record<string, any>
->;
+> &
+  AuditLogRequestUser;
+
 export type AuditLogGetInfoFromRequest = (req: AuditLogRequest) => string;
 export type AuditLogGetInfoFromAny = (req: any) => string;
 

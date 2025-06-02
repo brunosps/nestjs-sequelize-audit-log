@@ -1,12 +1,11 @@
 import { DynamicModule, MiddlewareConsumer, Module } from '@nestjs/common';
-import { AuditLogModelModule } from '../audit-log-model/audit-log-model.module';
-import { AuditLogRequestLoggingMiddleware } from './middlewares/audit-log-request-logging.middleware';
-import {
-  AuditLogGetInfoFromRequest,
-  AuditLogRequestAuthRoute,
-} from '../interfaces/audit-log-module-options.interface';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+
+import { AuditLogModelModule } from '../audit-log-model/audit-log-model.module';
+import { AuditLogRequestAuthRoute } from '../interfaces/audit-log-module-options.interface';
+
 import { RequestIdInterceptor } from './interceptors/request-id.interceptor';
+import { AuditLogRequestLoggingMiddleware } from './middlewares/audit-log-request-logging.middleware';
 import { AuditLogRequestService } from './services/audit-log-request.service';
 
 export type AuditRequestModuleOptions = {

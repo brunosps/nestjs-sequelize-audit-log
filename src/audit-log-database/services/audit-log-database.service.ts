@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
-import { Sequelize } from 'sequelize';
-import { AuditLogService } from '../../audit-log-core/services/audit-log.service';
 import { InjectConnection } from '@nestjs/sequelize';
+import { Sequelize } from 'sequelize';
+
+import { AuditLogService } from '../../audit-log-core/services/audit-log.service';
 
 export interface AuditLogDatabaseType {
   action: string;

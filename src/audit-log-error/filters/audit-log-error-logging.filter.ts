@@ -1,17 +1,14 @@
 import {
-  ExceptionFilter,
-  Catch,
   ArgumentsHost,
+  Catch,
+  ExceptionFilter,
   HttpException,
   HttpStatus,
-  Injectable,
   Inject,
+  Injectable,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { InjectModel } from '@nestjs/sequelize';
 
-import { AuditLogModel } from '../../audit-log-model/audit-log.model';
-import { AuditLogErrorModel } from '../../audit-log-model/audit-log-error.model';
 import { AuditLogService } from '../../audit-log-core/services/audit-log.service';
 
 export type AuditLogErrorType = {

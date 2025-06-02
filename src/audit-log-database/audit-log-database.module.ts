@@ -1,6 +1,8 @@
-import { DynamicModule, MiddlewareConsumer, Module } from '@nestjs/common';
-import { AuditLogDatabaseService } from './services/audit-log-database.service';
+import { DynamicModule, Module } from '@nestjs/common';
+
 import { AuditLogCoreModule } from '../audit-log-core/audit-log-core.module';
+
+import { AuditLogDatabaseService } from './services/audit-log-database.service';
 
 type AuditDatabaseModuleOptions = {
   auditedTables: Array<string>;

@@ -1,20 +1,14 @@
-import {
-  DynamicModule,
-  Global,
-  MiddlewareConsumer,
-  Module,
-  NestModule,
-  Provider,
-} from '@nestjs/common';
-import { AuditLogModelModule } from './audit-log-model/audit-log-model.module';
+import { DynamicModule, Module } from '@nestjs/common';
+
+import { AuditLogArchiveModule } from './audit-log-archive/audit-log-archive.module';
+import { AuditLogCoreModule } from './audit-log-core/audit-log-core.module';
 import { AuditLogDatabaseModule } from './audit-log-database/audit-log-database.module';
 import { AuditLogErrorModule } from './audit-log-error/audit-log-error.module';
 import { AuditLogEventModule } from './audit-log-event/audit-log-event.module';
-import { AuditLogArchiveModule } from './audit-log-archive/audit-log-archive.module';
 import { AuditLogIntegrationModule } from './audit-log-integration/audit-log-integration.module';
+import { AuditLogModelModule } from './audit-log-model/audit-log-model.module';
 import { AuditLogRequestModule } from './audit-log-request/audit-log-request.module';
 import { AuditLogModuleOptions } from './interfaces/audit-log-module-options.interface';
-import { AuditLogCoreModule } from './audit-log-core/audit-log-core.module';
 
 @Module({})
 export class AuditLogModule {

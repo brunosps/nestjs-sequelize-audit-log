@@ -1,13 +1,14 @@
 import {
-  Model,
-  Table,
   Column,
-  DataType,
-  ForeignKey,
-  PrimaryKey,
   CreatedAt,
+  DataType,
   Default,
+  ForeignKey,
+  Model,
+  PrimaryKey,
+  Table,
 } from 'sequelize-typescript';
+
 import { AuditLogModel } from './audit-log.model';
 
 @Table({ tableName: 'audit_logs_integration', timestamps: false })

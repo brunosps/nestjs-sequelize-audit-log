@@ -1,13 +1,9 @@
 import { Inject, Injectable, NestMiddleware, Optional } from '@nestjs/common';
-import { Request, Response, NextFunction } from 'express';
-import { CreationAttributes } from 'sequelize';
-import { v4 as uuidv4 } from 'uuid';
-import { AuditLogRequestModel } from '../../audit-log-model/audit-log-request.model';
+import { NextFunction, Request, Response } from 'express';
 
-import { AuditLogRequestAuthRoute } from '../../interfaces/audit-log-module-options.interface';
-
-import { sanitizePayload } from '../../utils/sanitizePayload';
 import { AuditLogService } from '../../audit-log-core/services/audit-log.service';
+import { AuditLogRequestAuthRoute } from '../../interfaces/audit-log-module-options.interface';
+import { sanitizePayload } from '../../utils/sanitizePayload';
 
 export type AuditLogRequestType = {
   requestMethod: string;

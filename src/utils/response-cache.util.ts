@@ -1,6 +1,3 @@
-/**
- * Utilitário para gerenciar o cache de respostas
- */
 export class ResponseCache {
   private static _instance: ResponseCache;
   private cache: Map<string, Buffer[]>;

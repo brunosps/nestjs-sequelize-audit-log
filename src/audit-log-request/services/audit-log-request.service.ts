@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+
 import { RequestIdInterceptor } from '../interceptors/request-id.interceptor';
 
 @Injectable()

@@ -1,6 +1,8 @@
 import { DynamicModule, Module } from '@nestjs/common';
-import { AuditLogEventService } from './services/audit-log-event.service';
+
 import { AuditLogCoreModule } from '../audit-log-core/audit-log-core.module';
+
+import { AuditLogEventService } from './services/audit-log-event.service';
 
 @Module({})
 export class AuditLogEventModule {

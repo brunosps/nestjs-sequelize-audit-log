@@ -5,12 +5,12 @@ module.exports = {
     tsconfigRootDir: __dirname,
     sourceType: 'module',
   },
-  plugins: ['@typescript-eslint/eslint-plugin', 'prettier'],
+  plugins: ['@typescript-eslint/eslint-plugin', 'simple-import-sort', 'unused-imports', 'prettier'],
   extends: [
     'eslint:recommended',
     'plugin:@typescript-eslint/recommended',
     'plugin:prettier/recommended',
-    'prettier', // Certifique-se de que prettier seja o último para sobrescrever outras configs de formatação
+    'prettier',
   ],
   root: true,
   env: {
@@ -24,32 +24,85 @@ module.exports = {
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
     'prettier/prettier': ['error', { endOfLine: 'auto' }],
-    '@typescript-eslint/no-unused-vars': [
-      'warn',
+
+    // Regras para imports
+    'simple-import-sort/imports': [
+      'error',
       {
-        argsIgnorePattern: '^_',
-        varsIgnorePattern: '^_',
-        caughtErrorsIgnorePattern: '^_',
+        groups: [
+          ['^node:'],
+          ['^@?\\w'],
+          ['^(@|components|utils|config|hooks|pages|styles)(/.*|$)'],
+          ['^\\u0000'],
+          ['^\\.\\.(?!/?$)', '^\\.\\./?$'],
+          ['^\\./(?=.*/)(?!/?$)', '^\\.(?!/?$)', '^\\./?$'],
+          ['^.+\\.?(css)$'],
+        ],
       },
     ],
-    'no-constant-condition': 'warn', // Alterado para warning
-    'no-prototype-builtins': 'warn', // Alterado para warning
-    '@typescript-eslint/ban-types': [ // Configuração mais granular para ban-types
-      'warn', // Alterado para warning
+    'simple-import-sort/exports': 'error',
+    'import/first': 'off',
+    'import/newline-after-import': 'off',
+    'import/no-duplicates': 'off',
+
+    // Regras para imports não utilizados
+    'unused-imports/no-unused-imports': 'error',
+    'unused-imports/no-unused-vars': [
+      'warn',
+      {
+        vars: 'all',
+        varsIgnorePattern: '^_',
+        args: 'after-used',
+        argsIgnorePattern: '^_',
+      },
+    ],
+    '@typescript-eslint/no-unused-vars': 'off',
+
+    // Regras para comentários
+    'spaced-comment': [
+      'error',
+      'always',
+      {
+        line: {
+          markers: ['/'],
+          exceptions: ['-', '+'],
+        },
+        block: {
+          markers: ['!'],
+          exceptions: ['*'],
+          balanced: true,
+        },
+      },
+    ],
+
+    // Proibir tipos específicos de comentários
+    'no-inline-comments': 'error', // Remove comentários inline
+    'line-comment-position': ['error', { position: 'above' }], // Força comentários acima da linha
+
+    // Regra customizada para remover comentários TODO/FIXME (opcional)
+    'no-warning-comments': [
+      'warn',
+      {
+        terms: ['todo', 'fixme', 'hack', 'review', 'xxx'],
+        location: 'anywhere',
+      },
+    ],
+
+    // Outras regras existentes
+    'no-constant-condition': 'warn',
+    'no-prototype-builtins': 'warn',
+    '@typescript-eslint/ban-types': [
+      'warn',
       {
         types: {
           Function: {
-            message:
-              "Don't use `Function` as a type. The `Function` type accepts any function-like value. It provides no type safety when calling the function, which can be a common source of bugs. It also accepts things like class declarations, which will throw at runtime as they will not be called with `new`. If you are expecting the function to accept certain arguments, you should explicitly define the function shape.",
-            fixWith: '(...args: any[]) => any', // Sugestão de correção
+            message: "Don't use `Function` as a type. Use a more specific function type instead.",
+            fixWith: '(...args: any[]) => any',
           },
-          // Você pode adicionar outras configurações de ban-types aqui se necessário
-          // '{}': false, // Exemplo para permitir {} se você precisar
         },
         extendDefaults: true,
       },
     ],
-    'no-inner-declarations': ['warn', 'functions'], // Alterado para warning, apenas para funções
-    // Adicione ou sobrescreva regras conforme necessário
+    'no-inner-declarations': ['warn', 'functions'],
   },
 };

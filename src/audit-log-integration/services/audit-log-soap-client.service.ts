@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectModel } from '@nestjs/sequelize';
 import { Client, createClientAsync } from 'soap';
 import { v4 as uuidv4 } from 'uuid';
-import { InjectModel } from '@nestjs/sequelize';
+
 import { AuditLogModel } from '../../audit-log-model/audit-log.model';
 import { AuditLogIntegrationModel } from '../../audit-log-model/audit-log-integration.model';
 

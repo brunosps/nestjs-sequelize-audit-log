@@ -1,21 +1,17 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { AsyncLocalStorage } from 'async_hooks';
-import {
-  AuditLogGetInfoFromRequest,
-  AuditLogRequest,
-} from '../../interfaces/audit-log-module-options.interface';
-import { extractClientIp } from '../../utils/ip';
-import { AuditLogEventLogType } from '../../audit-log-event/services/audit-log-event.service';
 import { InjectModel } from '@nestjs/sequelize';
+import { AsyncLocalStorage } from 'async_hooks';
 import { CreationAttributes } from 'sequelize';
-import { AuditLogEventModel } from '../../audit-log-model/audit-log-event.model';
-import { AuditLogModel } from '../../audit-log-model/audit-log.model';
 import { v4 as uuidv4 } from 'uuid';
+
 import { AuditLogDatabaseType } from '../../audit-log-database/services/audit-log-database.service';
-import { AuditLogEntityModel } from '../../audit-log-model/audit-log-entity.model';
 import { AuditLogErrorType } from '../../audit-log-error/filters/audit-log-error-logging.filter';
-import { AuditLogErrorModel } from '../../audit-log-model/audit-log-error.model';
+import { AuditLogEventLogType } from '../../audit-log-event/services/audit-log-event.service';
 import { AuditLogHttpIntegrationType } from '../../audit-log-integration/services/audit-log-http.service';
+import { AuditLogModel } from '../../audit-log-model/audit-log.model';
+import { AuditLogEntityModel } from '../../audit-log-model/audit-log-entity.model';
+import { AuditLogErrorModel } from '../../audit-log-model/audit-log-error.model';
+import { AuditLogEventModel } from '../../audit-log-model/audit-log-event.model';
 import { AuditLogIntegrationModel } from '../../audit-log-model/audit-log-integration.model';
 import { AuditLogLoginModel } from '../../audit-log-model/audit-log-login.model';
 import { AuditLogRequestModel } from '../../audit-log-model/audit-log-request.model';
@@ -23,6 +19,11 @@ import {
   AuditLogLoginType,
   AuditLogRequestType,
 } from '../../audit-log-request/middlewares/audit-log-request-logging.middleware';
+import {
+  AuditLogGetInfoFromRequest,
+  AuditLogRequest,
+} from '../../interfaces/audit-log-module-options.interface';
+import { extractClientIp } from '../../utils/ip';
 
 type AuditLogType =
   | 'ENTITY'

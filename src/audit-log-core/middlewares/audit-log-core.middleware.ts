@@ -1,9 +1,9 @@
 // src/common/middleware/user-session.middleware.ts
 import { Injectable, NestMiddleware } from '@nestjs/common';
-import { Response, NextFunction } from 'express';
+import { NextFunction, Response } from 'express';
 
-import { AuditLogService } from '../services/audit-log.service';
 import { AuditLogRequest } from '../../interfaces/audit-log-module-options.interface';
+import { AuditLogService } from '../services/audit-log.service';
 
 @Injectable()
 export class AuditLogCoreMiddleware implements NestMiddleware {

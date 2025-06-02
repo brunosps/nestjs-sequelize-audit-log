@@ -4,9 +4,11 @@ import {
   MiddlewareConsumer,
   Module,
 } from '@nestjs/common';
-import { AuditLogService } from './services/audit-log.service';
-import { AuditLogCoreMiddleware } from './middlewares/audit-log-core.middleware';
+
 import { AuditLogGetInfoFromRequest } from '../interfaces/audit-log-module-options.interface';
+
+import { AuditLogCoreMiddleware } from './middlewares/audit-log-core.middleware';
+import { AuditLogService } from './services/audit-log.service';
 
 type AuditCoreModuleOptions = {
   modelModule: any;

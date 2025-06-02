@@ -1,11 +1,11 @@
 import {
-  Table,
   Column,
-  Model,
-  DataType,
-  PrimaryKey,
-  Default,
   CreatedAt,
+  DataType,
+  Default,
+  Model,
+  PrimaryKey,
+  Table,
 } from 'sequelize-typescript';
 
 @Table({
