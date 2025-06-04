@@ -16,14 +16,34 @@ Um módulo abrangente de auditoria de logs para aplicações NestJS que fornece 
 ## Instalação
 
 ```bash
-npm install @your-org/audit-log
+npm install nestjs-sequelize-audit-log
 ```
+
+### Instalação das Migrações
+
+Após instalar o pacote, você precisa copiar as migrações para o seu projeto:
+
+```bash
+npx audit-log-install-migrations migrations
+```
+
+Ou especifique um diretório personalizado:
+
+```bash
+npx audit-log-install-migrations database/migrations
+npx audit-log-install-migrations src/migrations
+```
+
+Este comando irá:
+- Copiar todas as migrações necessárias para o diretório especificado
+- Adicionar timestamp automático aos arquivos de migração
+- Garantir que não haja conflitos com migrações existentes
 
 ## Início Rápido
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { AuditLogModule } from '@your-org/audit-log';
+import { AuditLogModule } from 'nestjs-sequelize-audit-log';
 
 @Module({
   imports: [
@@ -127,7 +147,7 @@ O log de eventos está habilitado por padrão e pode ser usado de duas formas:
 **Usando o Decorator @AuditLogEvent:**
 
 ```typescript
-import { AuditLogEvent } from '@brunosps00/audit-log';
+import { AuditLogEvent } from 'nestjs-sequelize-audit-log';
 
 @AuditLogEvent({
   eventType: "UPDATE_USER_PASSWORD",
@@ -147,7 +167,7 @@ async updatePassword(updatePasswordInput: UpdatePasswordInput): Promise<UpdatePa
 **Usando Injeção Direta do Service:**
 
 ```typescript
-import { AuditLogService } from '@brunosps00/audit-log';
+import { AuditLogService } from 'nestjs-sequelize-audit-log';
 import { Injectable } from '@nestjs/common';
 
 @Injectable()
@@ -454,4 +474,4 @@ Licença MIT - veja o arquivo LICENSE para detalhes
 
 ## Suporte
 
-Para problemas e dúvidas, visite nosso [repositório no GitHub](https://github.com/your-org/audit-log) ou entre em contato com a equipe de desenvolvimento.
+Para problemas e dúvidas, visite nosso [repositório no GitHub](https://github.com/brunosps00/nestjs-sequelize-audit-log) ou entre em contato com a equipe de desenvolvimento.

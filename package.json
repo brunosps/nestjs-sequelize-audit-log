@@ -1,5 +1,5 @@
 {
-  "name": "@brunosps00/audit-log",
+  "name": "nestjs-sequelize-audit-log",
   "version": "1.0.0",
   "description": "Biblioteca para gerenciamento de logs de auditoria em aplicações NestJS",
   "author": "Bruno Santos",
@@ -7,7 +7,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "audit-log-copy-migrations": "scripts/copy-migrations.js"
+    "audit-log-install-migrations": "scripts/install-migrations.js"
   },
   "files": [
     "dist/**/*",
