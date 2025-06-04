@@ -1,211 +1,398 @@
-# Audit Log Library for NestJS with Sequelize
+# AuditLog Module
 
-This library provides a comprehensive audit logging system for NestJS applications using Sequelize as the ORM. It offers various features to log different types of events and actions within your application.
+A comprehensive audit logging module for NestJS applications that provides detailed tracking of database operations, HTTP requests, errors, and system integrations.
 
 ## Features
 
-1.  Database change logging (via Triggers)
-2.  HTTP request logging
-3.  Error logging
-4.  Integration call logging (REST and SOAP)
-5.  Custom event logging
-6.  Log archiving
+- 🔍 **Database Table Auditing**: Automatic tracking of CRUD operations on specified tables
+- 📝 **Request Logging**: HTTP request/response logging with user identification
+- ❌ **Error Logging**: Comprehensive error tracking and reporting
+- 🔗 **Integration Logging**: External API and service integration monitoring
+- 👤 **Authentication Route Tracking**: Special handling for authentication endpoints
+- 📦 **Archive Support**: Configurable data archiving for long-term storage
+- 🌐 **IP Address Tracking**: Client IP address logging
+- 🔧 **Flexible Configuration**: Extensive customization options
 
 ## Installation
 
-To use this library in your NestJS project, you need to install it along with its dependencies:
-
 ```bash
-npm install @brunosps00/audit-log @nestjs/sequelize sequelize sequelize-typescript
-# or
-yarn add @brunosps00/audit-log @nestjs/sequelize sequelize sequelize-typescript
+npm install @your-org/audit-log
 ```
 
-## Configuration
-
-To set up the Audit Log system in your NestJS application, you need to import and configure the `AuditLogModule` in your `AppModule`:
+## Quick Start
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { AuditLogModule } from '@brunosps00/audit-log'; // Corrected package name
-import { SequelizeModule } from '@nestjs/sequelize'; // Your main Sequelize module
+import { AuditLogModule } from '@your-org/audit-log';
 
 @Module({
   imports: [
-    SequelizeModule.register({
-      // Your main database configuration
-      // dialect, host, port, username, password, database, etc.
-      // models: [YourAppModels...],
-      // autoLoadModels: true,
-      // synchronize: false, // Recommended false in production
-    }),
-    AuditLogModule.register({
-      // Tables to be audited for changes (INSERT, UPDATE, DELETE) via triggers
-      // E.g.: auditedTables: ['users', 'products'],
-      auditedTables: [], // Leave empty if you don't want table auditing via triggers
-
-      // Settings for the error logging module
-      enableErrorLogging: true, // Enables the global exception filter for logging errors
-
-      // Settings for the HTTP request logging module
-      enableRequestLogging: true, // Enables middleware to log all incoming requests
-      // Authentication route to be logged as 'LOGIN' instead of 'REQUEST'
-      authRoute: '/auth/login', // Or your application's login path
-
-      // Settings for the integration logging module
-      enableIntegrationLogging: true, // Enables interceptor for HttpService and AuditLogSoapClientService
-
-      // Settings for the log archiving module
-      enableArchive: true, // Enables the archiving task
-      archiveOptions: {
-        retentionPeriod: 30, // Days to keep logs before archiving (e.g., 30 days)
-        archiveDatabase: { // Configuration for the archive database
-          dialect: 'postgres', // or 'mysql', 'sqlite', etc.
-          host: process.env.ARCHIVE_DB_HOST,
-          port: parseInt(process.env.ARCHIVE_DB_PORT || '5432'),
-          username: process.env.ARCHIVE_DB_USERNAME,
-          password: process.env.ARCHIVE_DB_PASSWORD,
-          database: process.env.ARCHIVE_DB_NAME,
-          // synchronize: true, // Be careful in production, can lead to data loss. Use migrations.
-          // autoLoadModels: true, // To load log models in the archive connection
-        },
-        batchSize: 1000, // Number of records to process per batch during archiving
-        cronTime: '0 1 * * *', // Cron expression for running the archive task (e.g., daily at 1 AM)
-      }
+    AuditLogModule.forRoot({
+      enableRequestLogging: true,
+      enableErrorLogging: true,
+      enableIntegrationLogging: true,
+      auditedTables: ['users', 'orders', 'products'],
+      getUserId: (req) => req.user?.id,
+      getIpAddress: (req) => req.ip || req.connection.remoteAddress,
     }),
   ],
 })
 export class AppModule {}
 ```
 
-## Database Migrations
+## Configuration Options
 
-This library includes Sequelize models for storing audit logs. To create the necessary tables in your database (and in the archive database, if configured), you will need the migrations.
+### AuditLogModuleOptions
 
-You can copy the migrations provided by the library into your project by running the following command in the root of your project after installing the package:
+The main configuration interface provides the following options:
 
-```bash
-npx audit-log-copy-migrations
+```typescript
+interface AuditLogModuleOptions {
+  // User identification
+  getUserId?: (req: AuditLogRequest) => string;
+  
+  // IP address extraction
+  getIpAddress?: (req: AuditLogRequest) => string;
+  
+  // Feature toggles
+  enableErrorLogging?: boolean;
+  enableRequestLogging?: boolean;
+  enableIntegrationLogging?: boolean;
+  
+  // Database auditing
+  auditedTables?: Array<string>;
+  
+  // Authentication routes
+  authRoutes?: AuditLogRequestAuthRoute[];
+  
+  // Archive configuration
+  enableArchive?: false | AuditLogArchiveConfig;
+}
 ```
 
-By default, migrations will be copied to a directory named `migrations` in your project's root. If you wish to copy them to a different location, specify the path:
+### Feature Configuration
 
-```bash
-npx audit-log-copy-migrations ./src/database/migrations
+#### 1. Request Logging
+
+Enable HTTP request/response logging:
+
+```typescript
+AuditLogModule.forRoot({
+  enableRequestLogging: true,
+  getUserId: (req) => req.user?.id,
+  getIpAddress: (req) => req.headers['x-forwarded-for'] || req.ip,
+});
 ```
 
-After copying the migrations, you will need to configure and run them using the Sequelize CLI or your preferred migration tool. Ensure your Sequelize CLI is configured to use the directory where you copied the migrations.
+#### 2. Error Logging
 
-**Example `.sequelizerc` configuration (if using Sequelize CLI):**
-```javascript
-const path = require('path');
+Track application errors:
 
-module.exports = {
-  'config': path.resolve('src', 'config', 'database.js'), // Your Sequelize config file
-  'models-path': path.resolve('src', 'models'), // Your app models
-  'seeders-path': path.resolve('src', 'database', 'seeders'),
-  'migrations-path': path.resolve('src', 'database', 'migrations') // Where you copied the migrations
+```typescript
+AuditLogModule.forRoot({
+  enableErrorLogging: true,
+  getUserId: (req) => req.user?.id,
+});
+```
+
+#### 3. Integration Logging
+
+Monitor external API calls and integrations:
+
+```typescript
+AuditLogModule.forRoot({
+  enableIntegrationLogging: true,
+});
+```
+
+#### 4. Database Table Auditing
+
+Automatically track changes to specified database tables:
+
+```typescript
+AuditLogModule.forRoot({
+  auditedTables: [
+    'users',
+    'orders',
+    'products',
+    'transactions',
+  ],
+});
+```
+
+#### 5. Authentication Routes
+
+Special handling for authentication endpoints:
+
+```typescript
+AuditLogModule.forRoot({
+  authRoutes: [
+    {
+      path: '/auth/login',
+      methods: ['POST'],
+      getUserId: (req) => req.body?.email,
+      registerRequest: true,
+      system: 'authentication',
+    },
+    {
+      path: '/auth/logout',
+      methods: ['POST'],
+      system: 'authentication',
+    },
+  ],
+});
+```
+
+#### 6. Archive Configuration
+
+Configure data archiving for long-term storage in a separate database:
+
+```typescript
+AuditLogModule.forRoot({
+  enableArchive: {
+    retentionPeriod: 365, // days
+    batchSize: 1000,
+    archiveCronSchedule: '0 2 * * *', // Daily at 2 AM
+    archiveDatabase: {
+      dialect: 'postgres',
+      host: 'archive-db-host',
+      port: 5432,
+      username: 'archive_user',
+      password: 'archive_password',
+      database: 'audit_archive',
+    },
+  },
+});
+```
+
+## Advanced Usage
+
+### Custom User Identification
+
+Implement custom logic for extracting user information:
+
+```typescript
+AuditLogModule.forRoot({
+  getUserId: (req) => {
+    // JWT token extraction
+    if (req.headers.authorization) {
+      const token = req.headers.authorization.split(' ')[1];
+      const decoded = jwt.decode(token);
+      return decoded?.sub;
+    }
+    
+    // Session-based extraction
+    if (req.session?.user) {
+      return req.session.user.id;
+    }
+    
+    return 'anonymous';
+  },
+});
+```
+
+### Custom IP Address Extraction
+
+Handle various proxy configurations:
+
+```typescript
+AuditLogModule.forRoot({
+  getIpAddress: (req) => {
+    return (
+      req.headers['cf-connecting-ip'] ||
+      req.headers['x-real-ip'] ||
+      req.headers['x-forwarded-for']?.split(',')[0] ||
+      req.connection.remoteAddress ||
+      req.socket.remoteAddress ||
+      'unknown'
+    );
+  },
+});
+```
+
+### Authentication Route Configuration
+
+Configure different authentication endpoints:
+
+```typescript
+const authRoutes: AuditLogRequestAuthRoute[] = [
+  {
+    path: '/api/auth/login',
+    methods: ['POST'],
+    getUserId: (req) => req.body?.username || req.body?.email,
+    registerRequest: true,
+    system: 'web-auth',
+  },
+  {
+    path: '/api/auth/refresh',
+    methods: ['POST'],
+    getUserId: (req) => req.body?.refreshToken,
+    registerRequest: false,
+    system: 'token-refresh',
+  },
+  {
+    path: '/api/auth/password-reset',
+    methods: ['POST'],
+    getUserId: (req) => req.body?.email,
+    registerRequest: true,
+    system: 'password-reset',
+  },
+];
+```
+
+## Type Definitions
+
+### AuditLogRequest
+
+Extended Express request with user information:
+
+```typescript
+type AuditLogRequest = Request & {
+  user: {
+    id: string;
+    email: string;
+  };
 };
 ```
 
-Run the migrations:
-```bash
-npx sequelize-cli db:migrate
-```
-If you are using a separate archive database, you will need to run the migrations for it as well, by pointing the Sequelize CLI to the archive database configuration.
+### AuditLogRequestAuthRoute
 
-## Usage
-
-### Database Change Logging (Triggers)
-
-If `auditedTables` is configured with table names, the library will attempt to create triggers on these tables to automatically capture INSERT, UPDATE, and DELETE events.
-**Important:** The database user configured in Sequelize needs permissions to create triggers. This feature is most robust with databases like MySQL and PostgreSQL.
-
-### HTTP Request Logging
-
-HTTP request logging is automatically enabled if `enableRequestLogging` is set to `true`. All incoming HTTP requests will be logged.
-
-### Error Logging
-
-Error logging is automatically enabled if `enableErrorLogging` is set to `true`. It will catch and log all unhandled exceptions in your application.
-
-### Integration Call Logging
-
-Integration call logging is enabled if `enableIntegrationLogging` is set to `true`.
-*   **REST:** Calls made using NestJS's `HttpService` (from `@nestjs/axios`, which should be injected and used in your services) are automatically intercepted and logged.
-*   **SOAP:** For SOAP calls, use the provided `AuditLogSoapClientService`:
+Configuration for authentication routes:
 
 ```typescript
-import { Injectable } from '@nestjs/common';
-import { AuditLogSoapClientService } from '@brunosps00/audit-log';
+type AuditLogRequestAuthRoute = {
+  path: string;
+  methods: Array<string>;
+  getUserId?: (req: any) => string;
+  registerRequest?: boolean;
+  system: string;
+};
+```
 
-@Injectable()
-export class YourService {
-  constructor(private soapClientService: AuditLogSoapClientService) {}
+## Archive Configuration
 
-  async callSoapService() {
-    // The second argument is a name to identify this integration in the logs
-    const client = await this.soapClientService.createClient('http://example.com/service.wsdl', 'MySoapIntegration');
-    // Use the 'client' to make SOAP calls
-    // E.g.: const result = await client.myOperationAsync({ parameter: 'value' });
-  }
+### AuditLogArchiveConfig
+
+Configure data archiving settings for moving old audit logs to a separate database:
+
+```typescript
+interface AuditLogArchiveConfig {
+  retentionPeriod: number; // Number of days to keep logs in main database
+  archiveDatabase: SequelizeModuleOptions; // Separate database configuration
+  batchSize?: number; // Number of records to process per batch
+  archiveCronSchedule: string; // Cron expression for archive schedule
 }
 ```
 
-### Custom Event Logging
+### Archive Database Models
 
-You can log custom events using the `AuditLogEvent` decorator on methods in your services:
+The archive system creates mirrored models for all audit log types:
+- `ArchiveLogModel` - Main audit logs
+- `ArchiveLogEntityModel` - Entity change logs
+- `ArchiveLogErrorModel` - Error logs
+- `ArchiveLogEventModel` - Event logs
+- `ArchiveLogIntegrationModel` - Integration logs
+- `ArchiveLogRequestModel` - Request logs
+- `ArchiveLogLoginModel` - Login logs
+- `ArchiveLogDetailModel` - Detailed audit information
+
+## Best Practices
+
+### 1. Security Considerations
+
+- Never log sensitive information like passwords or tokens
+- Implement proper data retention policies
+- Use secure storage for archived logs
+- Sanitize user input in log messages
+
+### 2. Performance Optimization
+
+- Use async logging to avoid blocking operations
+- Configure appropriate batch sizes for archive operations
+- Use separate databases for audit logs and archives
+- Monitor database storage usage and performance
+- Set appropriate retention periods to manage main database size
+
+### 3. Compliance
+
+- Ensure GDPR compliance for user data logging
+- Implement proper data anonymization
+- Set appropriate retention periods
+- Provide audit trail export capabilities
+
+## Examples
+
+### Basic Setup
 
 ```typescript
-import { Injectable } from '@nestjs/common';
-import { AuditLogEvent } from '@brunosps00/audit-log'; // Verify the correct import path
-
-@Injectable()
-export class YourService {
-  @AuditLogEvent({
-    eventType: 'SPECIFIC_USER_ACTION',
-    // Description can be a string or a function receiving method args, result, or error
-    eventDescription: (context, result, error, args) => `User ${args[0]} performed a specific action.`,
-    // getDetails is optional and allows adding a JSON payload with event details
-    getDetails: (context, result, error, args) => ({ 
-        userId: args[0], 
-        additionalParam: args[1],
-        outcome: result, // The result of the performUserAction method
-        errorDetails: error // The error, if the method throws an exception
-    })
-  })
-  async performUserAction(userId: string, additionalData: any) {
-    // Your logic here
-    if (!userId) throw new Error('User ID is required');
-    return { success: true, data: `Action for ${userId} with ${additionalData}` };
-  }
-}
+@Module({
+  imports: [
+    AuditLogModule.forRoot({
+      enableRequestLogging: true,
+      enableErrorLogging: true,
+      auditedTables: ['users', 'orders'],
+      getUserId: (req) => req.user?.id,
+    }),
+  ],
+})
+export class AppModule {}
 ```
-The `context` provided to `eventDescription` and `getDetails` functions is the NestJS `ExecutionContext`, allowing access to the request, etc.
 
-### Log Archiving
+### Production Configuration
 
-Log archiving is automatically handled if `enableArchive` and `archiveOptions` are configured. The task will run according to the specified `cronTime` to archive logs older than the `retentionPeriod`.
+```typescript
+@Module({
+  imports: [
+    AuditLogModule.forRoot({
+      enableRequestLogging: true,
+      enableErrorLogging: true,
+      enableIntegrationLogging: true,
+      auditedTables: [
+        'users', 'orders', 'products', 'transactions',
+        'invoices', 'payments', 'shipping',
+      ],
+      getUserId: (req) => extractUserFromJWT(req),
+      getIpAddress: (req) => extractRealIP(req),
+      authRoutes: [
+        {
+          path: '/auth/login',
+          methods: ['POST'],
+          getUserId: (req) => req.body?.email,
+          registerRequest: true,
+          system: 'authentication',
+        },
+      ],
+      enableArchive: {
+        retentionPeriod: 2555, // 7 years
+        batchSize: 5000,
+        archiveCronSchedule: '0 2 * * *', // Daily at 2 AM
+        archiveDatabase: {
+          dialect: 'postgres',
+          host: 'archive-db-host',
+          port: 5432,
+          username: 'archive_user',
+          password: 'archive_password',
+          database: 'company_audit_archive',
+        },
+      },
+    }),
+  ],
+})
+export class AppModule {}
+```
 
-## Database Models
+## Contributing
 
-The library creates the following Sequelize models for storing audit logs:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
 
-*   `AuditLogModel`: Main log entry (common to all log types)
-*   `AuditLogEntityModel`: Details of database entity changes (used by triggers)
-*   `AuditLogRequestModel`: Details of HTTP requests
-*   `AuditLogErrorModel`: Details of application errors
-*   `AuditLogEventModel`: Details of custom events
-*   `AuditLogIntegrationModel`: Details of integration calls (REST/SOAP)
+## License
 
-These models will be created in your main database and, if archiving is enabled, also in the archive database.
+MIT License - see LICENSE file for details
 
-## Considerations
+## Support
 
-*   **Performance:** Excessive logging can impact performance. Configure log levels and audited tables carefully.
-*   **Security:** Sensitive information should not be logged directly. The library attempts to sanitize request payloads, but review and customize if necessary.
-*   **Database Permissions:** For the trigger-based table auditing feature, the database user needs appropriate permissions (e.g., `TRIGGER`, `CREATE ROUTINE`, `ALTER ROUTINE` depending on the database and functions like `uuid_v4`).
-
-## Conclusion
-
-This Audit Log library provides a robust solution for logging various events in your NestJS application. By following the configuration and usage instructions, you can easily integrate it into your project and gain valuable insights into your application's behavior and user actions.
+For issues and questions, please visit our [GitHub repository](https://github.com/your-org/audit-log) or contact the development team.
