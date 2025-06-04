@@ -25,6 +25,8 @@ import {
 } from '../../interfaces/audit-log-module-options.interface';
 import { extractClientIp } from '../../utils/ip';
 
+import { PayloadDetailsService } from './payload-details.service';
+
 type AuditLogType =
   | 'ENTITY'
   | 'REQUEST'
@@ -63,6 +65,8 @@ export class AuditLogService {
 
     @InjectModel(AuditLogLoginModel)
     private auditLogLoginModel: typeof AuditLogLoginModel,
+
+    private readonly payloadDetailsService: PayloadDetailsService,
 
     @Optional()
     @Inject('GET_USERID_FUNCTION')
@@ -190,7 +194,6 @@ export class AuditLogService {
       system: system,
     } as CreationAttributes<AuditLogLoginModel>);
   }
-
   private async _logIntegration(
     logId: string,
     {
@@ -202,13 +205,40 @@ export class AuditLogService {
       duration,
     }: AuditLogHttpIntegrationType,
   ) {
+    const chunkGroupId = uuidv4();
+    const context = {
+      logId,
+      chunkGroupId,
+      integrationName,
+      method,
+      userId: this.getUserInformation().id,
+    };
+
+    const processedRequestPayload =
+      await this.payloadDetailsService.processPayload(
+        chunkGroupId,
+        requestPayload,
+        'request',
+        'INTEGRATION',
+        context,
+      );
+
+    const processedResponsePayload =
+      await this.payloadDetailsService.processPayload(
+        chunkGroupId,
+        responsePayload,
+        'response',
+        'INTEGRATION',
+        context,
+      );
+
     await this.auditLogIntegrationModel.create({
-      id: uuidv4(),
+      id: chunkGroupId,
       logId: logId,
       integrationName,
       method,
-      requestPayload,
-      responsePayload,
+      requestPayload: processedRequestPayload,
+      responsePayload: processedResponsePayload,
       status,
       duration,
     } as CreationAttributes<AuditLogIntegrationModel>);

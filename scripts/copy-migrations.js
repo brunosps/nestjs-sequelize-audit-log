@@ -4,11 +4,25 @@ const fs = require('fs-extra'); // Usando fs-extra para cópia recursiva fácil
 const path = require('path');
 
 const sourceMigrationsDir = path.join(__dirname, '..', 'migrations'); // Caminho para as migrações na sua biblioteca
-const defaultTargetDir = 'migrations'; // Diretório padrão no projeto do usuário
 
-// O primeiro argumento após o nome do script pode ser o diretório de destino
+// O primeiro argumento após o nome do script é obrigatório - diretório de destino
 const targetDirArg = process.argv[2];
-const targetMigrationsDir = path.resolve(process.cwd(), targetDirArg || defaultTargetDir);
+
+if (!targetDirArg) {
+  console.error('❌ Erro: Diretório de destino é obrigatório!');
+  console.log('');
+  console.log('📚 Uso correto:');
+  console.log('  npx audit-log-copy-migrations <diretorio-destino>');
+  console.log('');
+  console.log('📝 Exemplos:');
+  console.log('  npx audit-log-copy-migrations migrations');
+  console.log('  npx audit-log-copy-migrations database/migrations');
+  console.log('  npx audit-log-copy-migrations src/migrations');
+  console.log('');
+  process.exit(1);
+}
+
+const targetMigrationsDir = path.resolve(process.cwd(), targetDirArg);
 
 async function copyMigrations() {
   try {
@@ -34,7 +48,7 @@ async function copyMigrations() {
         const minutes = now.getMinutes().toString().padStart(2, '0');
         const seconds = now.getSeconds().toString().padStart(2, '0');
         const timestamp = `${year}${month}${day}${hours}${minutes}${seconds}`;
-        
+
         const newFileName = `${timestamp}-${file}`;
         const targetFilePath = path.join(targetMigrationsDir, newFileName);
 

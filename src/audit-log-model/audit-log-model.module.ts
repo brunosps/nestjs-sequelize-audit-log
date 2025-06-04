@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 
 import { AuditLogModel } from './audit-log.model';
+import { AuditLogDetailModel } from './audit-log-detail.model';
 import { AuditLogEntityModel } from './audit-log-entity.model';
 import { AuditLogErrorModel } from './audit-log-error.model';
 import { AuditLogEventModel } from './audit-log-event.model';
@@ -19,6 +20,7 @@ import { AuditLogRequestModel } from './audit-log-request.model';
       AuditLogErrorModel,
       AuditLogEventModel,
       AuditLogIntegrationModel,
+      AuditLogDetailModel,
     ]),
   ],
   exports: [SequelizeModule],

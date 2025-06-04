@@ -3,7 +3,7 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    
+
     await queryInterface.createTable('audit_logs', {
       id: {
         type: Sequelize.DataTypes.UUID,
@@ -31,7 +31,7 @@ module.exports = {
       },
     });
 
-    
+
     await queryInterface.createTable('audit_logs_entity', {
       log_id: {
         type: Sequelize.DataTypes.UUID,
@@ -73,7 +73,7 @@ module.exports = {
       onUpdate: 'cascade',
     });
 
-    
+
     await queryInterface.createTable('audit_logs_request', {
       log_id: {
         type: Sequelize.DataTypes.UUID,
@@ -132,7 +132,7 @@ module.exports = {
       onUpdate: 'cascade',
     });
 
-    
+
     await queryInterface.createTable('audit_logs_error', {
       log_id: {
         type: Sequelize.DataTypes.UUID,
@@ -181,7 +181,7 @@ module.exports = {
       onUpdate: 'cascade',
     });
 
-    
+
     await queryInterface.createTable('audit_logs_event', {
       log_id: {
         type: Sequelize.DataTypes.UUID,
@@ -222,7 +222,7 @@ module.exports = {
       onUpdate: 'cascade',
     });
 
-    
+
     await queryInterface.createTable("audit_logs_integration", {
       log_id: {
         type: Sequelize.DataTypes.UUID,
@@ -311,15 +311,93 @@ module.exports = {
       onDelete: "cascade",
       onUpdate: "cascade",
     });
+
+    await queryInterface.createTable('audit_logs_details', {
+      log_id: {
+        type: Sequelize.DataTypes.UUID,
+        allowNull: false,
+      },
+      id: {
+        type: Sequelize.DataTypes.UUID,
+        primaryKey: true,
+        allowNull: false,
+      },
+      payload_type: {
+        type: Sequelize.DataTypes.ENUM,
+        values: ['request', 'response', 'entity', 'event', 'error'],
+        allowNull: false,
+      },
+      log_type: {
+        type: Sequelize.DataTypes.ENUM,
+        values: ['ENTITY', 'REQUEST', 'ERROR', 'EVENT', 'LOGIN', 'INTEGRATION'],
+        allowNull: false,
+      },
+      chunk_group_id: {
+        type: Sequelize.DataTypes.UUID,
+        allowNull: true,
+      },
+      chunk_sequence: {
+        type: Sequelize.DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1,
+      },
+      total_chunks: {
+        type: Sequelize.DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1,
+      },
+      original_size: {
+        type: Sequelize.DataTypes.INTEGER,
+        allowNull: false,
+      },
+      payload_content: {
+        type: Sequelize.DataTypes.TEXT,
+        allowNull: false,
+      },
+      context: {
+        type: Sequelize.DataTypes.STRING(500),
+        allowNull: true,
+      },
+      user_id: {
+        type: Sequelize.DataTypes.STRING,
+        allowNull: false,
+      },
+      created_at: {
+        allowNull: false,
+        type: Sequelize.DATE,
+        defaultValue: Sequelize.fn("now"),
+      },
+    });
+
+    await queryInterface.addConstraint("audit_logs_details", {
+      fields: ["log_id"],
+      type: "foreign key",
+      name: "fkey_logId_audit_logs_details",
+      references: {
+        table: "audit_logs",
+        field: "id",
+      },
+      onDelete: "cascade",
+      onUpdate: "cascade",
+    });
+
+    await queryInterface.addIndex('audit_logs_details', ['chunk_group_id', 'log_type', 'payload_type', 'chunk_sequence'], {
+      name: 'idx_audit_logs_details_1',
+    });
+
+    await queryInterface.addIndex('audit_logs_details', ['log_id', 'chunk_group_id', 'log_type', 'payload_type', 'chunk_sequence'], {
+      name: 'idx_audit_logs_details_2',
+    });
   },
 
-  async down(queryInterface, Sequelize) {    
+  async down(queryInterface, Sequelize) {
     await queryInterface.dropTable("audit_logs_integration");
     await queryInterface.dropTable('audit_logs_event');
     await queryInterface.dropTable('audit_logs_error');
     await queryInterface.dropTable('audit_logs_request');
     await queryInterface.dropTable('audit_logs_entity');
     await queryInterface.dropTable('audit_logs_login');
+    await queryInterface.dropTable('audit_logs_details');
     await queryInterface.dropTable('audit_logs');
   }
 };

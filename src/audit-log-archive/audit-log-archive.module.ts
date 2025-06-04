@@ -3,6 +3,7 @@ import { SequelizeModuleOptions } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize-typescript';
 
 import { AuditLogModel } from '../audit-log-model/audit-log.model';
+import { AuditLogDetailModel } from '../audit-log-model/audit-log-detail.model';
 import { AuditLogEntityModel } from '../audit-log-model/audit-log-entity.model';
 import { AuditLogErrorModel } from '../audit-log-model/audit-log-error.model';
 import { AuditLogEventModel } from '../audit-log-model/audit-log-event.model';
@@ -20,6 +21,7 @@ export class ArchiveLogEventModel extends AuditLogEventModel {}
 export class ArchiveLogIntegrationModel extends AuditLogIntegrationModel {}
 export class ArchiveLogRequestModel extends AuditLogRequestModel {}
 export class ArchiveLogLoginModel extends AuditLogLoginModel {}
+export class ArchiveLogDetailModel extends AuditLogDetailModel {}
 
 export interface AuditLogArchiveConfig {
   retentionPeriod: number;
@@ -51,6 +53,7 @@ export class AuditLogArchiveModule {
             ArchiveLogIntegrationModel,
             ArchiveLogRequestModel,
             ArchiveLogLoginModel,
+            ArchiveLogDetailModel,
           ];
 
           config.archiveDatabase.autoLoadModels = false;

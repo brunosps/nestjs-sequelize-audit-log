@@ -9,6 +9,7 @@ import { AuditLogGetInfoFromRequest } from '../interfaces/audit-log-module-optio
 
 import { AuditLogCoreMiddleware } from './middlewares/audit-log-core.middleware';
 import { AuditLogService } from './services/audit-log.service';
+import { PayloadDetailsService } from './services/payload-details.service';
 
 type AuditCoreModuleOptions = {
   modelModule: any;
@@ -23,9 +24,10 @@ export class AuditLogCoreModule {
     return {
       module: AuditLogCoreModule,
       imports: [config.modelModule],
-      exports: [AuditLogService],
+      exports: [AuditLogService, PayloadDetailsService],
       providers: [
         AuditLogCoreMiddleware,
+        PayloadDetailsService,
         AuditLogService,
         {
           provide: 'GET_USERID_FUNCTION',
