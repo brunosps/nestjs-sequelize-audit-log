@@ -120,7 +120,66 @@ AuditLogModule.forRoot({
 });
 ```
 
-#### 5. Rotas de Autenticação
+#### 5. Log de Eventos
+
+O log de eventos está habilitado por padrão e pode ser usado de duas formas:
+
+**Usando o Decorator @AuditLogEvent:**
+
+```typescript
+import { AuditLogEvent } from '@brunosps00/audit-log';
+
+@AuditLogEvent({
+  eventType: "UPDATE_USER_PASSWORD",
+  eventDescription: "Atualização de senha do usuário",
+  getDetails: (args, result) => ({
+    userId: args[0].userId,
+    success: result.success
+  }),
+  getUserId: (args, result) => args[0].userId
+})
+async updatePassword(updatePasswordInput: UpdatePasswordInput): Promise<UpdatePasswordOutput> {
+  // Lógica de atualização de senha
+  return await this.passwordService.update(updatePasswordInput);
+}
+```
+
+**Usando Injeção Direta do Service:**
+
+```typescript
+import { AuditLogService } from '@brunosps00/audit-log';
+import { Injectable } from '@nestjs/common';
+
+@Injectable()
+export class UserService { 
+  constructor(
+    private readonly userRepository: UserRepository,
+    private readonly auditLogService: AuditLogService,
+  ) {}
+
+  async validateUser(input: ValidateUserInput): Promise<boolean> {
+    const user = await this.userRepository.findByEmail(input.email);
+    
+    // Log manual do evento
+    this.auditLogService.logEvent({
+      type: 'USER_VALIDATION',
+      description: 'Validação de credenciais do usuário',
+      details: {
+        email: input.email,
+        success: !!user
+      }
+    });
+
+    if (!user) {
+      throw new Error('Usuário não encontrado');
+    }
+    
+    return true;
+  }
+}
+```
+
+#### 6. Rotas de Autenticação
 
 Tratamento especial para endpoints de autenticação:
 
@@ -143,7 +202,7 @@ AuditLogModule.forRoot({
 });
 ```
 
-#### 6. Configuração de Archive
+#### 7. Configuração de Archive
 
 Configure o arquivamento de dados para armazenamento de longo prazo em um banco de dados separado:
 
