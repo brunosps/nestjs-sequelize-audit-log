@@ -8,6 +8,7 @@ Um módulo abrangente de auditoria de logs para aplicações NestJS que fornece 
 - 📝 **Log de Requisições**: Log de requisições/respostas HTTP com identificação do usuário
 - ❌ **Log de Erros**: Rastreamento e relatório abrangente de erros
 - 🔗 **Log de Integrações**: Monitoramento de integrações com APIs externas e serviços
+- 🧼 **Cliente SOAP com Auditoria**: Cliente SOAP integrado com auditoria automática completa
 - 👤 **Rastreamento de Rotas de Autenticação**: Tratamento especial para endpoints de autenticação
 - 📦 **Suporte a Archive**: Arquivamento configurável de dados para armazenamento de longo prazo
 - 🌐 **Rastreamento de Endereço IP**: Log do endereço IP do cliente
@@ -464,33 +465,6 @@ export class AppModule {}
 
 A biblioteca inclui um cliente SOAP integrado que automaticamente registra todas as chamadas e respostas de serviços SOAP para auditoria completa.
 
-### Configuração Inicial
-
-Primeiro, inicialize o módulo SOAP no seu AppModule:
-
-```typescript
-import { Module, OnModuleInit } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
-import { AuditLogModule, initializeSoapClientUtils } from 'nestjs-sequelize-audit-log';
-
-@Module({
-  imports: [
-    AuditLogModule.forRoot({
-      enableIntegrationLogging: true, // Necessário para SOAP logging
-      // outras configurações...
-    }),
-  ],
-})
-export class AppModule implements OnModuleInit {
-  constructor(private moduleRef: ModuleRef) {}
-
-  onModuleInit() {
-    // Inicializa o utilitário SOAP
-    initializeSoapClientUtils(this.moduleRef);
-  }
-}
-```
-
 ### Uso da Função createAuditSoapClient
 
 **⚠️ IMPORTANTE**: Use sempre a função `createAuditSoapClient` para criar clientes SOAP. Esta é a única função recomendada para garantir auditoria automática completa.
@@ -500,23 +474,23 @@ import { createAuditSoapClient } from 'nestjs-sequelize-audit-log';
 import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
-export class SapService {
-  private readonly logger = new Logger(SapService.name);
+export class ExternalSystemService {
+  private readonly logger = new Logger(ExternalSystemService.name);
 
   async getClient(): Promise<any> {
     try {
       const client = await createAuditSoapClient(
-        process.env.SAP_WSDL_URL!, // URL do WSDL
+        process.env.EXTERNAL_WSDL_URL!, // URL do WSDL
         { wsdl_options: { timeout: 60000 } }, // Opções do SOAP
-        process.env.SAP_ENDPOINT // Endpoint opcional
+        process.env.EXTERNAL_ENDPOINT // Endpoint opcional
       );
 
       // Configure autenticação se necessário
-      if (process.env.SAP_USER && process.env.SAP_PASSWORD) {
+      if (process.env.EXTERNAL_USER && process.env.EXTERNAL_PASSWORD) {
         const { BasicAuthSecurity } = await import('soap');
         client.setSecurity(new BasicAuthSecurity(
-          process.env.SAP_USER,
-          process.env.SAP_PASSWORD
+          process.env.EXTERNAL_USER,
+          process.env.EXTERNAL_PASSWORD
         ));
       }
 
@@ -553,36 +527,16 @@ export class SapService {
 - **Método SOAP**: Detectado automaticamente do XML, ignorando namespaces
 - **URLs**: Incluídas automaticamente no nome da integração para rastreabilidade
 
-#### 3. Logs Gerados
-
-Para uma chamada SOAP típica, os logs incluem:
-
-```typescript
-// Console
-SOAP Request [eid-123] to MANTERGESCOM[http://sap.empresa.com].consultarDocumento: <soap:Envelope>...</soap:Envelope>
-SOAP Response [eid-123] from MANTERGESCOM[http://sap.empresa.com].consultarDocumento: <soap:Envelope>...</soap:Envelope>
-
-// Base de Dados
-{
-  "integrationName": "MANTERGESCOM[http://sap.empresa.com].consultarDocumento",
-  "method": "consultarDocumento",
-  "requestPayload": "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">...</soap:Envelope>",
-  "responsePayload": "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">...</soap:Envelope>",
-  "status": "200",
-  "duration": 1250
-}
-```
-
 ### Exemplo Avançado com Múltiplos Serviços
 
 ```typescript
 @Injectable()
-export class IntegracaoSapService {
-  private readonly logger = new Logger(IntegracaoSapService.name);
+export class IntegracaoExternalService {
+  private readonly logger = new Logger(IntegracaoExternalService.name);
 
   async consultarCliente(cpf: string) {
     const client = await createAuditSoapClient(
-      process.env.SAP_CONSULTAR_CLIENTE_WSDL!,
+      process.env.EXTERNAL_CONSULTAR_CLIENTE_WSDL!,
       { wsdl_options: { timeout: 30000 } }
     );
 
@@ -590,23 +544,23 @@ export class IntegracaoSapService {
     return resultado;
   }
 
-  async manterGescom(dados: any) {
+  async manterProdutos(dados: any) {
     const client = await createAuditSoapClient(
-      process.env.SAP_MANTER_GESCOM_WSDL!,
+      process.env.EXTERNAL_MANTER_PRODUTOS_WSDL!,
       { 
         wsdl_options: { timeout: 60000 },
-        endpoint: process.env.SAP_MANTER_GESCOM_ENDPOINT 
+        endpoint: process.env.EXTERNAL_MANTER_PRODUTOS_ENDPOINT 
       },
-      process.env.SAP_MANTER_GESCOM_ENDPOINT
+      process.env.EXTERNAL_MANTER_PRODUTOS_ENDPOINT
     );
 
-    const resultado = await client.ManterGescomAsync(dados);
+    const resultado = await client.ManterProdutosAsync(dados);
     return resultado;
   }
 
   async processarPedido(pedidoData: any) {
     const client = await createAuditSoapClient(
-      process.env.SAP_PROCESSAR_PEDIDO_WSDL!,
+      process.env.EXTERNAL_PROCESSAR_PEDIDO_WSDL!,
       { wsdl_options: { timeout: 90000 } }
     );
 
@@ -622,16 +576,16 @@ Configure as seguintes variáveis de ambiente:
 
 ```bash
 # URLs dos WSDLs
-SAP_CONSULTAR_CLIENTE_WSDL=http://sap.empresa.com/ConsultarCliente.wsdl
-SAP_MANTER_GESCOM_WSDL=http://sap.empresa.com/ManterGescom.wsdl
-SAP_PROCESSAR_PEDIDO_WSDL=http://sap.empresa.com/ProcessarPedido.wsdl
+EXTERNAL_CONSULTAR_CLIENTE_WSDL=http://api.empresa.com/ConsultarCliente.wsdl
+EXTERNAL_MANTER_PRODUTOS_WSDL=http://api.empresa.com/ManterProdutos.wsdl
+EXTERNAL_PROCESSAR_PEDIDO_WSDL=http://api.empresa.com/ProcessarPedido.wsdl
 
 # Endpoints alternativos (opcional)
-SAP_MANTER_GESCOM_ENDPOINT=http://sap-prod.empresa.com/soap
+EXTERNAL_MANTER_PRODUTOS_ENDPOINT=http://api-prod.empresa.com/soap
 
 # Credenciais de autenticação
-SAP_USER=usuario_integracao
-SAP_PASSWORD=senha_secreta
+EXTERNAL_USER=usuario_integracao
+EXTERNAL_PASSWORD=senha_secreta
 ```
 
 ### Vantagens da Auditoria SOAP
