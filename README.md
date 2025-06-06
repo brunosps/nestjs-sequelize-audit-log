@@ -275,7 +275,7 @@ AuditLogModule.forRoot({
 Lidar com várias configurações de proxy:
 
 ```typescript
-AuditLogModule.forRoot({
+AuditLogModule.register({
   getIpAddress: (req) => {
     return (
       req.headers['cf-connecting-ip'] ||
@@ -460,18 +460,301 @@ export class AppModule {}
 export class AppModule {}
 ```
 
-## Contribuindo
+## SOAP Client com Auditoria Automática
 
-1. Faça um fork do repositório
-2. Crie uma branch para sua feature
-3. Faça suas alterações
-4. Adicione testes
-5. Envie um pull request
+A biblioteca inclui um cliente SOAP integrado que automaticamente registra todas as chamadas e respostas de serviços SOAP para auditoria completa.
 
-## Licença
+### Configuração Inicial
 
-Licença MIT - veja o arquivo LICENSE para detalhes
+Primeiro, inicialize o módulo SOAP no seu AppModule:
 
-## Suporte
+```typescript
+import { Module, OnModuleInit } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
+import { AuditLogModule, initializeSoapClientUtils } from 'nestjs-sequelize-audit-log';
 
-Para problemas e dúvidas, visite nosso [repositório no GitHub](https://github.com/brunosps00/nestjs-sequelize-audit-log) ou entre em contato com a equipe de desenvolvimento.
+@Module({
+  imports: [
+    AuditLogModule.forRoot({
+      enableIntegrationLogging: true, // Necessário para SOAP logging
+      // outras configurações...
+    }),
+  ],
+})
+export class AppModule implements OnModuleInit {
+  constructor(private moduleRef: ModuleRef) {}
+
+  onModuleInit() {
+    // Inicializa o utilitário SOAP
+    initializeSoapClientUtils(this.moduleRef);
+  }
+}
+```
+
+### Uso da Função createAuditSoapClient
+
+**⚠️ IMPORTANTE**: Use sempre a função `createAuditSoapClient` para criar clientes SOAP. Esta é a única função recomendada para garantir auditoria automática completa.
+
+```typescript
+import { createAuditSoapClient } from 'nestjs-sequelize-audit-log';
+import { Injectable, Logger } from '@nestjs/common';
+
+@Injectable()
+export class SapService {
+  private readonly logger = new Logger(SapService.name);
+
+  async getClient(): Promise<any> {
+    try {
+      const client = await createAuditSoapClient(
+        process.env.SAP_WSDL_URL!, // URL do WSDL
+        { wsdl_options: { timeout: 60000 } }, // Opções do SOAP
+        process.env.SAP_ENDPOINT // Endpoint opcional
+      );
+
+      // Configure autenticação se necessário
+      if (process.env.SAP_USER && process.env.SAP_PASSWORD) {
+        const { BasicAuthSecurity } = await import('soap');
+        client.setSecurity(new BasicAuthSecurity(
+          process.env.SAP_USER,
+          process.env.SAP_PASSWORD
+        ));
+      }
+
+      this.logger.log('Cliente SOAP criado com sucesso');
+      return client;
+    } catch (error) {
+      this.logger.error('Erro ao criar cliente SOAP:', error);
+      throw new Error('Falha na conexão com o serviço SOAP');
+    }
+  }
+
+  async executarOperacao(dados: any) {
+    const client = await this.getClient();
+    
+    // Todas as chamadas são automaticamente auditadas
+    const resultado = await client.MinhaOperacaoAsync(dados);
+    
+    return resultado;
+  }
+}
+```
+
+### Funcionalidades do SOAP Client
+
+#### 1. Auditoria Automática
+- **Requisições**: Log completo do XML SOAP enviado
+- **Respostas**: Log completo do XML SOAP recebido  
+- **Erros**: Captura e log de erros SOAP
+- **Timing**: Medição automática da duração das chamadas
+- **Método**: Extração automática do método SOAP executado
+
+#### 2. Extração Inteligente de Informações
+- **Integration Name**: Extraído automaticamente da URL do WSDL ou endpoint
+- **Método SOAP**: Detectado automaticamente do XML, ignorando namespaces
+- **URLs**: Incluídas automaticamente no nome da integração para rastreabilidade
+
+#### 3. Logs Gerados
+
+Para uma chamada SOAP típica, os logs incluem:
+
+```typescript
+// Console
+SOAP Request [eid-123] to MANTERGESCOM[http://sap.empresa.com].consultarDocumento: <soap:Envelope>...</soap:Envelope>
+SOAP Response [eid-123] from MANTERGESCOM[http://sap.empresa.com].consultarDocumento: <soap:Envelope>...</soap:Envelope>
+
+// Base de Dados
+{
+  "integrationName": "MANTERGESCOM[http://sap.empresa.com].consultarDocumento",
+  "method": "consultarDocumento",
+  "requestPayload": "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">...</soap:Envelope>",
+  "responsePayload": "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">...</soap:Envelope>",
+  "status": "200",
+  "duration": 1250
+}
+```
+
+### Exemplo Avançado com Múltiplos Serviços
+
+```typescript
+@Injectable()
+export class IntegracaoSapService {
+  private readonly logger = new Logger(IntegracaoSapService.name);
+
+  async consultarCliente(cpf: string) {
+    const client = await createAuditSoapClient(
+      process.env.SAP_CONSULTAR_CLIENTE_WSDL!,
+      { wsdl_options: { timeout: 30000 } }
+    );
+
+    const resultado = await client.ConsultarClienteAsync({ cpf });
+    return resultado;
+  }
+
+  async manterGescom(dados: any) {
+    const client = await createAuditSoapClient(
+      process.env.SAP_MANTER_GESCOM_WSDL!,
+      { 
+        wsdl_options: { timeout: 60000 },
+        endpoint: process.env.SAP_MANTER_GESCOM_ENDPOINT 
+      },
+      process.env.SAP_MANTER_GESCOM_ENDPOINT
+    );
+
+    const resultado = await client.ManterGescomAsync(dados);
+    return resultado;
+  }
+
+  async processarPedido(pedidoData: any) {
+    const client = await createAuditSoapClient(
+      process.env.SAP_PROCESSAR_PEDIDO_WSDL!,
+      { wsdl_options: { timeout: 90000 } }
+    );
+
+    const resultado = await client.ProcessarPedidoAsync(pedidoData);
+    return resultado;
+  }
+}
+```
+
+### Configuração de Ambiente
+
+Configure as seguintes variáveis de ambiente:
+
+```bash
+# URLs dos WSDLs
+SAP_CONSULTAR_CLIENTE_WSDL=http://sap.empresa.com/ConsultarCliente.wsdl
+SAP_MANTER_GESCOM_WSDL=http://sap.empresa.com/ManterGescom.wsdl
+SAP_PROCESSAR_PEDIDO_WSDL=http://sap.empresa.com/ProcessarPedido.wsdl
+
+# Endpoints alternativos (opcional)
+SAP_MANTER_GESCOM_ENDPOINT=http://sap-prod.empresa.com/soap
+
+# Credenciais de autenticação
+SAP_USER=usuario_integracao
+SAP_PASSWORD=senha_secreta
+```
+
+### Vantagens da Auditoria SOAP
+
+#### 1. **Rastreabilidade Completa**
+- Histórico completo de todas as chamadas SOAP
+- Identificação precisa de métodos executados
+- Logs de erro detalhados para debug
+
+#### 2. **Performance Monitoring**
+- Medição automática de tempo de resposta
+- Identificação de gargalos de performance
+- Métricas por serviço e método
+
+#### 3. **Debugging Facilitado**
+- XML completo das requisições e respostas
+- Stack traces de erros SOAP
+- Identificação de falhas de conectividade
+
+#### 4. **Compliance e Auditoria**
+- Registro completo para auditoria externa
+- Rastreamento de mudanças de dados
+- Conformidade com regulamentações
+
+### Integração com Monitoramento
+
+Os logs SOAP podem ser facilmente integrados com sistemas de monitoramento:
+
+```typescript
+@Injectable()
+export class MonitoringService {
+  constructor(private readonly auditLogService: AuditLogService) {}
+
+  async gerarRelatorioSoap(dataInicio: Date, dataFim: Date) {
+    // Busca logs de integração SOAP
+    const logs = await this.auditLogService.findIntegrationLogs({
+      startDate: dataInicio,
+      endDate: dataFim,
+      type: 'INTEGRATION'
+    });
+
+    return {
+      totalChamadas: logs.length,
+      sucesso: logs.filter(log => log.status === '200').length,
+      erros: logs.filter(log => log.status !== '200').length,
+      tempoMedio: logs.reduce((acc, log) => acc + log.duration, 0) / logs.length,
+      servicosMaisUsados: this.agruparPorServico(logs)
+    };
+  }
+}
+```
+
+### Melhores Práticas para SOAP
+
+#### 1. **Sempre Use createAuditSoapClient**
+```typescript
+// ✅ CORRETO
+const client = await createAuditSoapClient(wsdlUrl, options, endpoint);
+
+// ❌ INCORRETO - não terá auditoria
+const client = await soap.createClientAsync(wsdlUrl, options);
+```
+
+#### 2. **Configure Timeouts Adequados**
+```typescript
+const client = await createAuditSoapClient(wsdlUrl, {
+  wsdl_options: { 
+    timeout: 60000, // 60 segundos
+    rejectUnauthorized: false // apenas para desenvolvimento
+  }
+});
+```
+
+#### 3. **Trate Erros Apropriadamente**
+```typescript
+try {
+  const client = await createAuditSoapClient(wsdlUrl, options);
+  const resultado = await client.MinhaOperacaoAsync(dados);
+  return resultado;
+} catch (error) {
+  this.logger.error('Erro na operação SOAP:', error);
+  throw new Error('Falha na integração com o sistema externo');
+}
+```
+
+#### 4. **Use Variáveis de Ambiente**
+```typescript
+const client = await createAuditSoapClient(
+  process.env.WSDL_URL!, // ! indica que é obrigatório
+  { wsdl_options: { timeout: parseInt(process.env.SOAP_TIMEOUT || '60000') } },
+  process.env.SOAP_ENDPOINT
+);
+```
+
+### Monitoramento e Alertas
+
+Configure alertas baseados nos logs SOAP:
+
+```typescript
+@Injectable()
+export class SoapMonitoringService {
+  async verificarSaudeSoap() {
+    const ultimaHora = new Date(Date.now() - 60 * 60 * 1000);
+    
+    const errosRecentes = await this.auditLogService.countIntegrationErrors({
+      since: ultimaHora,
+      type: 'INTEGRATION'
+    });
+
+    if (errosRecentes > 10) {
+      await this.enviarAlerta('Alto número de erros SOAP na última hora');
+    }
+
+    const tempoMedioResposta = await this.auditLogService.getAverageResponseTime({
+      since: ultimaHora,
+      type: 'INTEGRATION'
+    });
+
+    if (tempoMedioResposta > 30000) { // 30 segundos
+      await this.enviarAlerta('Tempo de resposta SOAP acima do normal');
+    }
+  }
+}
+```
+
+A função `createAuditSoapClient` é a base para uma integração SOAP robusta, auditável e monitorável em aplicações NestJS.

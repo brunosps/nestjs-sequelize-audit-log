@@ -26,6 +26,7 @@ import {
 import { extractClientIp } from '../../utils/ip';
 
 import { PayloadDetailsService } from './payload-details.service';
+import { sanitizePayload } from '../../utils/sanitizePayload';
 
 type AuditLogType =
   | 'ENTITY'
@@ -178,7 +179,7 @@ export class AuditLogService {
       responseSize,
       duration,
       payload,
-      responseBody,
+      responseBody: sanitizePayload(responseBody),
       createdAt: new Date(),
     } as CreationAttributes<AuditLogRequestModel>);
   }
@@ -275,7 +276,7 @@ export class AuditLogService {
       logId: logId,
       action,
       entity: entity,
-      changedValues: JSON.stringify(changedValues),
+      changedValues: sanitizePayload(JSON.stringify(changedValues)),
       createdAt: new Date(),
     } as CreationAttributes<AuditLogEntityModel>);
   }

@@ -1,105 +1,179 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
-import { Client, createClientAsync } from 'soap';
-import { v4 as uuidv4 } from 'uuid';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Client, createClientAsync, IOptions } from 'soap';
 
-import { AuditLogModel } from '../../audit-log-model/audit-log.model';
-import { AuditLogIntegrationModel } from '../../audit-log-model/audit-log-integration.model';
+import { AuditLogService } from '../../audit-log-core';
+
+export type AuditLogSoapIntegrationType = {
+  integrationName: string;
+  method: string;
+  requestPayload: string;
+  responsePayload: string;
+  status: string;
+  duration: number;
+};
 
 @Injectable()
 export class AuditLogSoapClientService {
   private readonly logger = new Logger(AuditLogSoapClientService.name);
 
   constructor(
-    @InjectModel(AuditLogModel)
-    private readonly auditLogModel: typeof AuditLogModel,
-    @InjectModel(AuditLogIntegrationModel)
-    private readonly auditLogIntegrationModel: typeof AuditLogIntegrationModel,
+    @Inject(AuditLogService)
+    private readonly auditLogService: AuditLogService,
   ) {}
 
-  async createClient(wsdl: string, integrationName: string): Promise<Client> {
-    const client = await createClientAsync(wsdl);
+  async createAsyncClient(
+    wsdl: string,
+    options?: IOptions,
+    endpoint?: string,
+  ): Promise<Client> {
+    const client = await createClientAsync(wsdl, options, endpoint);
+    return this.setupClientLogging(client, wsdl);
+  }
+
+  public setupClientLogging(
+    client: Client,
+    wsdl?: string,
+    endpoint?: string,
+  ): Client {
     let startTime: number;
     let requestXml: string;
+    let soapMethod: string = 'SOAP_CALL';
+
+    const integrationName = wsdl || endpoint;
 
     client.on('request', (xml: string, eid: string) => {
       startTime = Date.now();
       requestXml = xml;
-      this.logger.debug(`SOAP Request [${eid}] to ${integrationName}: ${xml}`);
+      soapMethod = this.extractSoapMethod(xml);
     });
 
     client.on('response', (responseXml: string, eid: string) => {
       const duration = Date.now() - startTime;
-      this.logger.debug(
-        `SOAP Response [${eid}] from ${integrationName}: ${responseXml}`,
-      );
+
       this.saveLog({
         integrationName,
-        method: 'SOAP_CALL',
+        method: soapMethod,
         requestPayload: requestXml,
         responsePayload: responseXml,
         status: '200',
         duration,
-      }).catch((err) =>
-        this.logger.error('Failed to save SOAP success log', err),
-      );
+      }).catch((err) => console.log('Failed to save SOAP success log', err));
     });
 
     client.on('soapError', (error: any, eid: string) => {
       const duration = Date.now() - startTime;
       const errorPayload =
         error.root?.Envelope || error.message || 'SOAP Error';
-      this.logger.error(
-        `SOAP Error [${eid}] from ${integrationName}: ${JSON.stringify(errorPayload)}`,
-      );
-      this.saveLog({
+
+      const finalIntegrationName = this.buildIntegrationName(
         integrationName,
-        method: 'SOAP_CALL',
+        wsdl,
+        endpoint,
+        soapMethod,
+      );
+
+      this.saveLog({
+        integrationName: finalIntegrationName,
+        method: soapMethod,
         requestPayload: requestXml,
         responsePayload: JSON.stringify(errorPayload),
         status: '500',
         duration,
-      }).catch((err) =>
-        this.logger.error('Failed to save SOAP error log', err),
-      );
+      }).catch((err) => console.log('Failed to save SOAP error log', err));
     });
 
     return client;
   }
 
-  private async saveLog(data: {
-    integrationName: string;
-    method: string;
-    requestPayload: string;
-    responsePayload: string;
-    status: string;
-    duration: number;
-  }) {
+  private async saveLog(data: AuditLogSoapIntegrationType) {
     try {
-      const auditLog = await this.auditLogModel.create({
-        id: uuidv4(),
-        logType: 'INTEGRATION',
-        ipAddress: 'N/A',
-        userId: 'system',
-        createdAt: new Date(),
-      } as any);
-
-      await this.auditLogIntegrationModel.create({
-        id: uuidv4(),
-        logId: auditLog.id,
-        integrationName: data.integrationName,
-        method: data.method,
-        requestPayload: data.requestPayload,
-        responsePayload: data.responsePayload,
-        status: data.status,
-        duration: data.duration,
-      } as any);
-    } catch (error: any) {
-      this.logger.error(
-        'Error saving integration log:',
-        error.message,
-        error.stack,
-      );
+      this.auditLogService.registerLog('INTEGRATION', data);
+    } catch (error) {
+      console.error('Error saving integration log:', error);
     }
+  }
+
+  private extractSoapMethod(xml: string): string {
+    try {
+      const bodyContentMatch = xml.match(
+        /<(?:soap:)?Body[^>]*>([\s\S]*?)<\/(?:soap:)?Body>/i,
+      );
+
+      if (bodyContentMatch) {
+        const bodyContent = bodyContentMatch[1].trim();
+
+        const elementMatch = bodyContent.match(
+          /<(?:[^:>\s]+:)?([^:\s/>]+)[^>]*>/i,
+        );
+
+        if (elementMatch && elementMatch[1]) {
+          const methodName = elementMatch[1].trim();
+
+          const excludedElements = [
+            'Envelope',
+            'Body',
+            'Header',
+            'soap',
+            'SOAP',
+          ];
+
+          if (!excludedElements.includes(methodName) && methodName.length > 0) {
+            return methodName;
+          }
+        }
+
+        const allMatches = bodyContent.match(
+          /<(?:[^:>\s]+:)?([^:\s/>]+)[^>]*>/gi,
+        );
+        if (allMatches) {
+          for (const match of allMatches) {
+            const elementNameMatch = match.match(/<(?:[^:>\s]+:)?([^:\s/>]+)/i);
+            if (elementNameMatch && elementNameMatch[1]) {
+              const elementName = elementNameMatch[1].trim();
+              const excludedElements = [
+                'Envelope',
+                'Body',
+                'Header',
+                'soap',
+                'SOAP',
+              ];
+
+              if (
+                !excludedElements.includes(elementName) &&
+                elementName.length > 1
+              ) {
+                return elementName;
+              }
+            }
+          }
+        }
+      }
+
+      return 'SOAP_CALL';
+    } catch (error) {
+      console.warn('Erro ao extrair método SOAP do XML:', error);
+      return 'SOAP_CALL';
+    }
+  }
+
+  private buildIntegrationName(
+    integrationName: string,
+    wsdl?: string,
+    endpoint?: string,
+    soapMethod?: string,
+  ): string {
+    let finalName = integrationName;
+
+    if (endpoint) {
+      finalName = `${finalName}[${endpoint}]`;
+    } else if (wsdl) {
+      finalName = `${finalName}[${wsdl}]`;
+    }
+
+    if (soapMethod && soapMethod !== 'SOAP_CALL') {
+      finalName = `${finalName}.${soapMethod}`;
+    }
+
+    return finalName;
   }
 }

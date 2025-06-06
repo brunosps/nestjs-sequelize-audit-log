@@ -37,6 +37,10 @@ export class PayloadDetailsService {
     },
   ): Promise<string> {
     try {
+      if (payload === undefined) {
+        return 'Erro ao processar payload: TypeError [ERR_INVALID_ARG_TYPE]: The "string" argument must be of type string or an instance of Buffer or ArrayBuffer. Received undefined';
+      }
+
       const payloadStr =
         typeof payload === 'string' ? payload : JSON.stringify(payload);
       const originalSize = Buffer.byteLength(payloadStr, 'utf8');
@@ -58,7 +62,7 @@ export class PayloadDetailsService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      return `Error processing payload: ${errorMessage}`;
+      return `Erro ao processar payload: ${errorMessage}`;
     }
   }
 
@@ -82,7 +86,7 @@ export class PayloadDetailsService {
       );
       return result;
     } catch (error) {
-      const truncated = `${payloadStr.substring(0, PayloadDetailsService.config.previewSize!)} \n... [PAYLOAD TRUNCATED - DETAILS TABLE ERROR] \n ${error}`;
+      const truncated = `${payloadStr.substring(0, PayloadDetailsService.config.previewSize!)} \n... [PAYLOAD TRUNCADO - ERRO NA TABELA DE DETALHES] \n ${error}`;
       return truncated;
     }
   }
@@ -142,31 +146,34 @@ export class PayloadDetailsService {
   }
 
   async getFullPayload(payloadReference: string): Promise<string> {
-    const parsed = JSON.parse(payloadReference);
+    try {
+      const parsed = JSON.parse(payloadReference);
 
-    if (!parsed._detailsTable) {
+      if (!parsed._detailsTable) {
+        return payloadReference;
+      }
+      return await this.reconstructFromChunks(parsed._chunkGroupId);
+    } catch (error) {
       return payloadReference;
     }
-    return await this.reconstructFromChunks(parsed._chunkGroupId);
   }
 
   private async reconstructFromChunks(chunkGroupId: string): Promise<string> {
-    const chunks = await this.auditLogDetailModel.findAll({
-      where: { chunkGroupId },
-      order: [['chunkSequence', 'ASC']],
-    });
+    try {
+      const chunks = await this.auditLogDetailModel.findAll({
+        where: { chunkGroupId },
+        order: [['chunkSequence', 'ASC']],
+      });
 
-    for (let i = 0; i < chunks.length; i++) {
-      if (chunks[i].chunkSequence !== i + 1) {
-        throw new Error(`Missing chunk ${i + 1} in group ${chunkGroupId}`);
+      for (let i = 0; i < chunks.length; i++) {
+        if (chunks[i].chunkSequence !== i + 1) {
+          throw new Error(`Missing chunk ${i + 1} in group ${chunkGroupId}`);
+        }
       }
-    }
 
-    let reconstructedContent = '';
-    for (const chunk of chunks) {
-      reconstructedContent += chunk.payloadContent;
+      return chunks.map((chunk) => chunk.payloadContent).join('');
+    } catch (error) {
+      throw error;
     }
-
-    return chunks.map((chunk) => chunk.payloadContent).join('');
   }
 }

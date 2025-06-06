@@ -3,7 +3,9 @@ import { DynamicModule, Module } from '@nestjs/common';
 
 import { AuditLogCoreModule } from '../audit-log-core/audit-log-core.module';
 
+import { SoapClientUtilsProvider } from './providers/soap-client-utils.provider';
 import { AuditLogHttpService } from './services/audit-log-http.service';
+import { AuditLogSoapClientService } from './services/audit-log-soap-client.service';
 
 @Module({})
 export class AuditLogIntegrationModule {
@@ -12,7 +14,11 @@ export class AuditLogIntegrationModule {
       module: AuditLogIntegrationModule,
       imports: [HttpModule, AuditLogCoreModule],
       exports: [],
-      providers: [AuditLogHttpService],
+      providers: [
+        AuditLogHttpService,
+        AuditLogSoapClientService,
+        SoapClientUtilsProvider,
+      ],
     };
   }
 }
