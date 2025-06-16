@@ -24,7 +24,7 @@ export class ArchiveLogLoginModel extends AuditLogLoginModel {}
 export class ArchiveLogDetailModel extends AuditLogDetailModel {}
 
 export interface AuditLogArchiveConfig {
-  retentionPeriod: number;
+  logRetentionDays: number;
   archiveDatabase: SequelizeModuleOptions;
   batchSize?: number;
   archiveCronSchedule: string;

@@ -48,13 +48,14 @@ import { AuditLogModule } from 'nestjs-sequelize-audit-log';
 
 @Module({
   imports: [
-    AuditLogModule.forRoot({
+    AuditLogModule.register({
       enableRequestLogging: true,
       enableErrorLogging: true,
       enableIntegrationLogging: true,
       auditedTables: ['users', 'orders', 'products'],
       getUserId: (req) => req.user?.id,
       getIpAddress: (req) => req.ip || req.connection.remoteAddress,
+      logRetentionDays: 30, // Retenção padrão de logs
     }),
   ],
 })
@@ -86,6 +87,10 @@ interface AuditLogModuleOptions {
   // Rotas de autenticação
   authRoutes?: AuditLogRequestAuthRoute[];
   
+  // Configuração de retenção de logs
+  logRetentionDays?: number; // Padrão: 30 dias
+  cleaningCronSchedule?: string; // Padrão: '* */12 * * *' (a cada 12 horas)
+  
   // Configuração de arquivo
   enableArchive?: false | AuditLogArchiveConfig;
 }
@@ -98,7 +103,7 @@ interface AuditLogModuleOptions {
 Habilitar log de requisições/respostas HTTP:
 
 ```typescript
-AuditLogModule.forRoot({
+AuditLogModule.register({
   enableRequestLogging: true,
   getUserId: (req) => req.user?.id,
   getIpAddress: (req) => req.headers['x-forwarded-for'] || req.ip,
@@ -110,7 +115,7 @@ AuditLogModule.forRoot({
 Rastrear erros da aplicação:
 
 ```typescript
-AuditLogModule.forRoot({
+AuditLogModule.register({
   enableErrorLogging: true,
   getUserId: (req) => req.user?.id,
 });
@@ -121,7 +126,7 @@ AuditLogModule.forRoot({
 Monitorar chamadas de APIs externas e integrações:
 
 ```typescript
-AuditLogModule.forRoot({
+AuditLogModule.register({
   enableIntegrationLogging: true,
 });
 ```
@@ -131,7 +136,7 @@ AuditLogModule.forRoot({
 Rastrear automaticamente mudanças em tabelas específicas do banco de dados:
 
 ```typescript
-AuditLogModule.forRoot({
+AuditLogModule.register({
   auditedTables: [
     'users',
     'orders',
@@ -205,7 +210,7 @@ export class UserService {
 Tratamento especial para endpoints de autenticação:
 
 ```typescript
-AuditLogModule.forRoot({
+AuditLogModule.register({
   authRoutes: [
     {
       path: '/auth/login',
@@ -223,14 +228,25 @@ AuditLogModule.forRoot({
 });
 ```
 
-#### 7. Configuração de Archive
+#### 7. Configuração de Limpeza Automática de Logs
+
+Configure a limpeza automática de logs antigos quando não usar o sistema de archive:
+
+```typescript
+AuditLogModule.register({
+  logRetentionDays: 90, // Manter logs por 90 dias
+  cleaningCronSchedule: '0 2 * * *', // Limpeza diária às 2h da manhã (padrão: a cada 12 horas)
+});
+```
+
+#### 8. Configuração de Archive
 
 Configure o arquivamento de dados para armazenamento de longo prazo em um banco de dados separado:
 
 ```typescript
-AuditLogModule.forRoot({
+AuditLogModule.register({
   enableArchive: {
-    retentionPeriod: 365, // dias
+    retentionPeriodInDays: 365, // dias
     batchSize: 1000,
     archiveCronSchedule: '0 2 * * *', // Diariamente às 2h da manhã
     archiveDatabase: {
@@ -252,7 +268,7 @@ AuditLogModule.forRoot({
 Implemente lógica personalizada para extrair informações do usuário:
 
 ```typescript
-AuditLogModule.forRoot({
+AuditLogModule.register({
   getUserId: (req) => {
     // Extração de token JWT
     if (req.headers.authorization) {
@@ -357,7 +373,7 @@ Configure as definições de arquivamento de dados para mover logs de auditoria 
 
 ```typescript
 interface AuditLogArchiveConfig {
-  retentionPeriod: number; // Número de dias para manter logs no banco principal
+  retentionPeriodInDays: number; // Número de dias para manter logs no banco principal
   archiveDatabase: SequelizeModuleOptions; // Configuração do banco separado
   batchSize?: number; // Número de registros para processar por lote
   archiveCronSchedule: string; // Expressão cron para agendamento do arquivo
@@ -407,7 +423,7 @@ O sistema de archive cria modelos espelhados para todos os tipos de log de audit
 ```typescript
 @Module({
   imports: [
-    AuditLogModule.forRoot({
+    AuditLogModule.register({
       enableRequestLogging: true,
       enableErrorLogging: true,
       auditedTables: ['users', 'orders'],
@@ -423,7 +439,7 @@ export class AppModule {}
 ```typescript
 @Module({
   imports: [
-    AuditLogModule.forRoot({
+    AuditLogModule.register({
       enableRequestLogging: true,
       enableErrorLogging: true,
       enableIntegrationLogging: true,
@@ -443,7 +459,7 @@ export class AppModule {}
         },
       ],
       enableArchive: {
-        retentionPeriod: 2555, // 7 anos
+        retentionPeriodInDays: 2555, // 7 anos
         batchSize: 5000,
         archiveCronSchedule: '0 2 * * *', // Diariamente às 2h da manhã
         archiveDatabase: {

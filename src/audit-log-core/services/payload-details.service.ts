@@ -159,21 +159,17 @@ export class PayloadDetailsService {
   }
 
   private async reconstructFromChunks(chunkGroupId: string): Promise<string> {
-    try {
-      const chunks = await this.auditLogDetailModel.findAll({
-        where: { chunkGroupId },
-        order: [['chunkSequence', 'ASC']],
-      });
+    const chunks = await this.auditLogDetailModel.findAll({
+      where: { chunkGroupId },
+      order: [['chunkSequence', 'ASC']],
+    });
 
-      for (let i = 0; i < chunks.length; i++) {
-        if (chunks[i].chunkSequence !== i + 1) {
-          throw new Error(`Missing chunk ${i + 1} in group ${chunkGroupId}`);
-        }
+    for (let i = 0; i < chunks.length; i++) {
+      if (chunks[i].chunkSequence !== i + 1) {
+        throw new Error(`Missing chunk ${i + 1} in group ${chunkGroupId}`);
       }
-
-      return chunks.map((chunk) => chunk.payloadContent).join('');
-    } catch (error) {
-      throw error;
     }
+
+    return chunks.map((chunk) => chunk.payloadContent).join('');
   }
 }

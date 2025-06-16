@@ -91,7 +91,7 @@ export class AuditLogRequestLoggingMiddleware implements NestMiddleware {
           responseBody: responseBody ? responseBody : undefined,
         };
 
-        if (isLoginPath) {
+        if (isLoginPath && res.statusCode >= 200 && res.statusCode < 300) {
           const data: AuditLogLoginType = {
             system: isLoginPath.system,
             registerRequest: !!isLoginPath.registerRequest,

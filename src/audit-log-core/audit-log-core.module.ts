@@ -15,6 +15,7 @@ type AuditCoreModuleOptions = {
   modelModule: any;
   getUserId?: AuditLogGetInfoFromRequest;
   getIpAddress?: AuditLogGetInfoFromRequest;
+  logRetentionDays: number;
 };
 
 @Global()
@@ -36,6 +37,10 @@ export class AuditLogCoreModule {
         {
           provide: 'GET_IPADDRESS_FUNCTION',
           useValue: config.getIpAddress,
+        },
+        {
+          provide: 'LOG_RETENTION_DAYS',
+          useValue: config.logRetentionDays,
         },
       ],
     };

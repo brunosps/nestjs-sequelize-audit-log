@@ -9,16 +9,29 @@ import { AuditLogIntegrationModule } from './audit-log-integration/audit-log-int
 import { AuditLogModelModule } from './audit-log-model/audit-log-model.module';
 import { AuditLogRequestModule } from './audit-log-request/audit-log-request.module';
 import { AuditLogModuleOptions } from './interfaces/audit-log-module-options.interface';
+import { AuditLogCleaningTask } from './tasks/audit-log-cleaning.task';
 
 @Module({})
 export class AuditLogModule {
-  static register(options: AuditLogModuleOptions = {}): DynamicModule {
+  static register(
+    options: AuditLogModuleOptions = {
+      logRetentionDays: 30,
+      cleaningCronSchedule: '* */12 * * *',
+    },
+  ): DynamicModule {
     const imports = [];
     const exports = [];
+    const providers = [];
     const auditedTables = options.auditedTables ?? [];
 
     if (options.enableArchive) {
       imports.push(AuditLogArchiveModule.register(options.enableArchive));
+    } else {
+      providers.push(AuditLogCleaningTask);
+      providers.push({
+        provide: 'CLEANING_CRON_SCHEDULE',
+        useValue: options.cleaningCronSchedule,
+      });
     }
 
     if (auditedTables.length > 0) {
@@ -42,7 +55,9 @@ export class AuditLogModule {
     if (options.enableRequestLogging) {
       imports.push(
         AuditLogRequestModule.register({
-          authRoutes: options.authRoutes,
+          authRoutes: Array.isArray(options.enableRequestLogging)
+            ? options.enableRequestLogging
+            : [],
         }),
       );
       exports.push(AuditLogRequestModule);
@@ -55,12 +70,13 @@ export class AuditLogModule {
           modelModule: AuditLogModelModule,
           getIpAddress: options.getIpAddress,
           getUserId: options.getUserId,
+          logRetentionDays: options.logRetentionDays,
         }),
         AuditLogEventModule.register(),
         ...imports,
       ],
       exports: [AuditLogEventModule, ...exports],
-      providers: [],
+      providers,
     };
   }
 }

@@ -1,7 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { AsyncLocalStorage } from 'async_hooks';
-import { CreationAttributes } from 'sequelize';
+import { CreationAttributes, Op } from 'sequelize';
 import { v4 as uuidv4 } from 'uuid';
 
 import { AuditLogDatabaseType } from '../../audit-log-database/services/audit-log-database.service';
@@ -9,6 +9,7 @@ import { AuditLogErrorType } from '../../audit-log-error/filters/audit-log-error
 import { AuditLogEventLogType } from '../../audit-log-event/services/audit-log-event.service';
 import { AuditLogHttpIntegrationType } from '../../audit-log-integration/services/audit-log-http.service';
 import { AuditLogModel } from '../../audit-log-model/audit-log.model';
+import { AuditLogDetailModel } from '../../audit-log-model/audit-log-detail.model';
 import { AuditLogEntityModel } from '../../audit-log-model/audit-log-entity.model';
 import { AuditLogErrorModel } from '../../audit-log-model/audit-log-error.model';
 import { AuditLogEventModel } from '../../audit-log-model/audit-log-event.model';
@@ -24,9 +25,9 @@ import {
   AuditLogRequest,
 } from '../../interfaces/audit-log-module-options.interface';
 import { extractClientIp } from '../../utils/ip';
+import { sanitizePayload } from '../../utils/sanitizePayload';
 
 import { PayloadDetailsService } from './payload-details.service';
-import { sanitizePayload } from '../../utils/sanitizePayload';
 
 type AuditLogType =
   | 'ENTITY'
@@ -67,7 +68,13 @@ export class AuditLogService {
     @InjectModel(AuditLogLoginModel)
     private auditLogLoginModel: typeof AuditLogLoginModel,
 
+    @InjectModel(AuditLogDetailModel)
+    private readonly auditLogDetailModel: typeof AuditLogDetailModel,
+
     private readonly payloadDetailsService: PayloadDetailsService,
+
+    @Inject('LOG_RETENTION_DAYS')
+    private logRetentionDays: number,
 
     @Optional()
     @Inject('GET_USERID_FUNCTION')
@@ -112,6 +119,75 @@ export class AuditLogService {
     return userInformation;
   }
 
+  async clearLogs() {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - this.logRetentionDays);
+
+    await this.auditLogEventModel.destroy({
+      where: {
+        createdAt: {
+          [Op.lt]: cutoffDate,
+        },
+      },
+    });
+
+    await this.auditLogEntityModel.destroy({
+      where: {
+        createdAt: {
+          [Op.lt]: cutoffDate,
+        },
+      },
+    });
+
+    await this.auditLogErrorModel.destroy({
+      where: {
+        createdAt: {
+          [Op.lt]: cutoffDate,
+        },
+      },
+    });
+
+    await this.auditLogIntegrationModel.destroy({
+      where: {
+        createdAt: {
+          [Op.lt]: cutoffDate,
+        },
+      },
+    });
+
+    await this.auditLogRequestModel.destroy({
+      where: {
+        createdAt: {
+          [Op.lt]: cutoffDate,
+        },
+      },
+    });
+
+    await this.auditLogLoginModel.destroy({
+      where: {
+        createdAt: {
+          [Op.lt]: cutoffDate,
+        },
+      },
+    });
+
+    await this.auditLogDetailModel.destroy({
+      where: {
+        createdAt: {
+          [Op.lt]: cutoffDate,
+        },
+      },
+    });
+
+    await this.auditLogModel.destroy({
+      where: {
+        createdAt: {
+          [Op.lt]: cutoffDate,
+        },
+      },
+    });
+  }
+
   async logEvent(data: AuditLogEventLogType) {
     this.registerLog('EVENT', data);
   }
@@ -144,11 +220,9 @@ export class AuditLogService {
         break;
       case 'LOGIN':
         data = data as AuditLogLoginType;
-        await this._logLogin(
-          log.id,
-          data.userId || userInformation.id,
-          data as AuditLogLoginType,
-        );
+        log.userId = data.userId || userInformation.id;
+        log.save();
+        await this._logLogin(log.id, log.userId, data as AuditLogLoginType);
         if (data.registerRequest) {
           await this._logRequest(log.id, data.request as AuditLogRequestType);
         }

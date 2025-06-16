@@ -86,13 +86,6 @@ export class AuditLogDetailModel extends Model<AuditLogDetailModel> {
   payloadContent!: string;
 
   @Column({
-    type: DataType.STRING(500),
-    allowNull: true,
-    field: 'context',
-  })
-  context?: string;
-
-  @Column({
     type: DataType.STRING,
     allowNull: true,
     field: 'user_id',

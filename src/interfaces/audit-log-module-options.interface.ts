@@ -32,12 +32,13 @@ export type AuditLogRequestAuthRoute = {
 };
 
 export interface AuditLogModuleOptions {
+  logRetentionDays: number;
+  cleaningCronSchedule: string;
   getUserId?: AuditLogGetInfoFromRequest;
   getIpAddress?: AuditLogGetInfoFromRequest;
   enableErrorLogging?: boolean;
-  enableRequestLogging?: boolean;
+  enableRequestLogging?: boolean | AuditLogRequestAuthRoute[];
   enableIntegrationLogging?: boolean;
   auditedTables?: Array<string>;
-  authRoutes?: AuditLogRequestAuthRoute[];
   enableArchive?: false | AuditLogArchiveConfig;
 }

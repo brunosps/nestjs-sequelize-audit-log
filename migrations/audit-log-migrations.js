@@ -354,10 +354,6 @@ module.exports = {
         type: Sequelize.DataTypes.TEXT,
         allowNull: false,
       },
-      context: {
-        type: Sequelize.DataTypes.STRING(500),
-        allowNull: true,
-      },
       user_id: {
         type: Sequelize.DataTypes.STRING,
         allowNull: false,
