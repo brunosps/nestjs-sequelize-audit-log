@@ -1,6 +1,6 @@
 {
   "name": "nestjs-sequelize-audit-log",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Biblioteca para gerenciamento de logs de auditoria em aplicações NestJS",
   "author": "Bruno Santos",
   "license": "MIT",
