@@ -343,7 +343,13 @@ export class AuditLogService {
 
   private async _logEntity(
     logId: string,
-    { action, entity, changedValues }: AuditLogDatabaseType,
+    {
+      action,
+      entity,
+      changedValues,
+      entityPk,
+      entityKey,
+    }: AuditLogDatabaseType,
   ) {
     await this.auditLogEntityModel.create({
       id: uuidv4(),
@@ -351,6 +357,8 @@ export class AuditLogService {
       action,
       entity: entity,
       changedValues: sanitizePayload(JSON.stringify(changedValues)),
+      entityPk: entityPk ? JSON.stringify(entityPk) : null,
+      entityKey: entityKey || null,
       createdAt: new Date(),
     } as CreationAttributes<AuditLogEntityModel>);
   }

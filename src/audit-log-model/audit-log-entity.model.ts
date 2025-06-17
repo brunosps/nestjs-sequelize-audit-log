@@ -53,6 +53,20 @@ export class AuditLogEntityModel extends Model<AuditLogEntityModel> {
   })
   changedValues!: string;
 
+  @Column({
+    type: DataType.TEXT,
+    allowNull: true,
+    field: 'entity_pk',
+  })
+  entityPk?: string;
+
+  @Column({
+    type: DataType.STRING,
+    allowNull: true,
+    field: 'entity_key',
+  })
+  entityKey?: string;
+
   @CreatedAt
   @Default(DataType.NOW)
   @Column({

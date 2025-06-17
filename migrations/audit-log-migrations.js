@@ -55,6 +55,14 @@ module.exports = {
         type: Sequelize.TEXT,
         allowNull: false
       },
+      entity_pk: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      },
+      entity_key: {
+        type: Sequelize.STRING,
+        allowNull: true,
+      },
       created_at: {
         allowNull: false,
         type: Sequelize.DATE,

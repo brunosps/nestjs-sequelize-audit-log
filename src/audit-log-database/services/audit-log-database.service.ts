@@ -9,6 +9,8 @@ export interface AuditLogDatabaseType {
   action: string;
   entity: string;
   changedValues: Record<string, any>;
+  entityPk?: Record<string, any>;
+  entityKey?: string;
 }
 
 @Injectable()
@@ -73,7 +75,18 @@ export class AuditLogDatabaseService implements OnModuleInit {
               const changes = this.getChangedFields(beforeRecord, afterRecord);
 
               if (Object.keys(changes).length > 0) {
-                await this.registerLog('UPDATE', tableName, changes);
+                const mockInstance = {
+                  dataValues: afterRecord,
+                  constructor: options.model,
+                };
+                const pkInfo = this.extractPrimaryKeyInfo(mockInstance);
+                await this.registerLog(
+                  'UPDATE',
+                  tableName,
+                  changes,
+                  pkInfo.entityPk,
+                  pkInfo.entityKey,
+                );
               }
             }
           }
@@ -87,10 +100,13 @@ export class AuditLogDatabaseService implements OnModuleInit {
       'afterCreate',
       async (instance: any, options: any) => {
         if (this.shouldAuditTable(instance.constructor.tableName)) {
+          const pkInfo = this.extractPrimaryKeyInfo(instance);
           await this.registerLog(
             'CREATE',
             instance.constructor.tableName,
             instance.dataValues,
+            pkInfo.entityPk,
+            pkInfo.entityKey,
           );
         }
       },
@@ -104,10 +120,13 @@ export class AuditLogDatabaseService implements OnModuleInit {
           const currentValues = instance.dataValues;
           const changes = this.getChangedFields(previousValues, currentValues);
           if (Object.keys(changes).length > 0) {
+            const pkInfo = this.extractPrimaryKeyInfo(instance);
             await this.registerLog(
               'UPDATE',
               instance.constructor.tableName,
               changes,
+              pkInfo.entityPk,
+              pkInfo.entityKey,
             );
           }
         }
@@ -118,10 +137,13 @@ export class AuditLogDatabaseService implements OnModuleInit {
       'afterDestroy',
       async (instance: any, options: any) => {
         if (this.shouldAuditTable(instance.constructor.tableName)) {
+          const pkInfo = this.extractPrimaryKeyInfo(instance);
           await this.registerLog(
             'DELETE',
             instance.constructor.tableName,
             instance.dataValues,
+            pkInfo.entityPk,
+            pkInfo.entityKey,
           );
         }
       },
@@ -156,7 +178,18 @@ export class AuditLogDatabaseService implements OnModuleInit {
 
         try {
           for (const deletedRecord of recordsBeforeDelete) {
-            await this.registerLog('DELETE', tableName, deletedRecord);
+            const mockInstance = {
+              dataValues: deletedRecord,
+              constructor: options.model,
+            };
+            const pkInfo = this.extractPrimaryKeyInfo(mockInstance);
+            await this.registerLog(
+              'DELETE',
+              tableName,
+              deletedRecord,
+              pkInfo.entityPk,
+              pkInfo.entityKey,
+            );
           }
         } catch (error) {
           console.error('Error processing individual bulk deletes:', error);
@@ -239,15 +272,94 @@ export class AuditLogDatabaseService implements OnModuleInit {
     action: 'CREATE' | 'UPDATE' | 'DELETE',
     tableName: string,
     changedValues: Record<string, any>,
+    entityPk?: Record<string, any>,
+    entityKey?: string,
   ) {
     try {
       this.auditLogService.registerLog('ENTITY', {
         action,
         entity: tableName,
         changedValues,
+        entityPk,
+        entityKey,
       });
     } catch (error) {
       console.error('Error logging entity change:', error);
+    }
+  }
+
+  private extractPrimaryKeyInfo(instance: any): {
+    entityPk: Record<string, any>;
+    entityKey: string;
+  } {
+    try {
+      const model = instance.constructor;
+      const primaryKeys = this.getModelPrimaryKeys(model);
+      const dataValues = instance.dataValues || instance;
+
+      const entityPk: Record<string, any> = {};
+      const pkValues: string[] = [];
+
+      for (const pkField of primaryKeys) {
+        const value = dataValues[pkField];
+        if (value !== undefined && value !== null) {
+          entityPk[pkField] = value;
+
+          const stringValue = this.formatPkValueForConcatenation(
+            pkField,
+            value,
+            model,
+          );
+          pkValues.push(stringValue);
+        }
+      }
+
+      const entityKey = pkValues.join('');
+
+      return {
+        entityPk,
+        entityKey,
+      };
+    } catch (error) {
+      console.error('Error extracting primary key info:', error);
+      return {
+        entityPk: {},
+        entityKey: '',
+      };
+    }
+  }
+
+  private formatPkValueForConcatenation(
+    fieldName: string,
+    value: any,
+    model: any,
+  ): string {
+    try {
+      const fieldAttribute = model.rawAttributes?.[fieldName];
+
+      if (!fieldAttribute) {
+        return String(value);
+      }
+
+      const dataType = fieldAttribute.type;
+
+      if (dataType.constructor.name === 'STRING' && dataType.options?.length) {
+        const maxLength = dataType.options.length;
+        return String(value).padEnd(maxLength, ' ');
+      }
+
+      if (
+        dataType.constructor.name === 'INTEGER' ||
+        dataType.constructor.name === 'BIGINT' ||
+        dataType.constructor.name === 'DECIMAL'
+      ) {
+        return String(value);
+      }
+
+      return String(value);
+    } catch (error) {
+      console.error(`Error formatting PK value for field ${fieldName}:`, error);
+      return String(value);
     }
   }
 }
