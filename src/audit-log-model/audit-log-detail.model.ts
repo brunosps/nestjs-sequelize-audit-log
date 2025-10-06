@@ -3,6 +3,7 @@ import {
   CreatedAt,
   DataType,
   Default,
+  Index,
   Model,
   PrimaryKey,
   Table,
@@ -11,6 +12,28 @@ import {
 @Table({
   tableName: 'audit_logs_details',
   timestamps: false,
+  indexes: [
+    // Otimizações adicionais para os índices existentes
+    {
+      fields: ['log_id', 'created_at'],
+      name: 'idx_audit_logs_details_log_id_created_at',
+    },
+    {
+      fields: ['log_type', 'payload_type', 'created_at'],
+      name: 'idx_audit_logs_details_log_payload_type_created_at',
+    },
+    {
+      fields: ['user_id', 'log_type', 'created_at'],
+      name: 'idx_audit_logs_details_user_log_type_created_at',
+    },
+    // Índice especializado para queries de chunk reconstruction
+    {
+      fields: ['chunk_group_id', 'chunk_sequence'],
+      name: 'idx_audit_logs_details_chunk_reconstruction',
+    },
+    // Índice para deleção em batch
+    { fields: ['log_id'], name: 'idx_audit_logs_details_batch_delete' },
+  ],
 })
 export class AuditLogDetailModel extends Model<AuditLogDetailModel> {
   @PrimaryKey

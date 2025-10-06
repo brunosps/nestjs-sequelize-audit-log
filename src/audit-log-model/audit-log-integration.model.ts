@@ -4,6 +4,7 @@ import {
   DataType,
   Default,
   ForeignKey,
+  Index,
   Model,
   PrimaryKey,
   Table,
@@ -11,7 +12,33 @@ import {
 
 import { AuditLogModel } from './audit-log.model';
 
-@Table({ tableName: 'audit_logs_integration', timestamps: false })
+@Table({
+  tableName: 'audit_logs_integration',
+  timestamps: false,
+  indexes: [
+    // Índices para logs de integração
+    {
+      fields: ['log_id', 'created_at'],
+      name: 'idx_audit_logs_integration_log_id_created_at',
+    },
+    // Índice para integration_name com tamanho limitado
+    {
+      fields: [
+        { name: 'integration_name', length: 255 },
+        'status',
+        'created_at',
+      ],
+      name: 'idx_audit_logs_integration_name_status_created_at',
+    },
+    {
+      fields: ['status', 'created_at'],
+      name: 'idx_audit_logs_integration_status_created_at',
+    },
+    { fields: ['duration'], name: 'idx_audit_logs_integration_duration' },
+    // Índice para deleção em batch
+    { fields: ['log_id'], name: 'idx_audit_logs_integration_batch_delete' },
+  ],
+})
 export class AuditLogIntegrationModel extends Model<AuditLogIntegrationModel> {
   @ForeignKey(() => AuditLogModel)
   @Column({

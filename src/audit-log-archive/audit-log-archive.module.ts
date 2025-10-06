@@ -1,6 +1,7 @@
-import { type DynamicModule, Module } from '@nestjs/common';
+import { type DynamicModule, Logger, Module } from '@nestjs/common';
 import { SequelizeModuleOptions } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize-typescript';
+import { ConnectionError } from 'sequelize';
 
 import { AuditLogModel } from '../audit-log-model/audit-log.model';
 import { AuditLogDetailModel } from '../audit-log-model/audit-log-detail.model';
@@ -24,7 +25,8 @@ export class ArchiveLogLoginModel extends AuditLogLoginModel {}
 export class ArchiveLogDetailModel extends AuditLogDetailModel {}
 
 export interface AuditLogArchiveConfig {
-  logRetentionDays: number;
+  archiveCutoffDays?: number;
+  archiveRetentionDays: number;
   archiveDatabase: SequelizeModuleOptions;
   batchSize?: number;
   archiveCronSchedule: string;
@@ -32,6 +34,36 @@ export interface AuditLogArchiveConfig {
 
 @Module({})
 export class AuditLogArchiveModule {
+  static async testSequelizeConnection(
+    config: AuditLogArchiveConfig,
+  ): Promise<boolean> {
+    const logger = new Logger(AuditLogArchiveModule.name);
+
+    const sequelize = new Sequelize({
+      dialect: config.archiveDatabase.dialect,
+      host: config.archiveDatabase.host,
+      port: config.archiveDatabase.port,
+      database: config.archiveDatabase.database,
+      dialectOptions: config.archiveDatabase.dialectOptions,
+      logging: null,
+    });
+
+    try {
+      logger.log(
+        `Trying to connect to the archive database ${config.archiveDatabase.host}`,
+      );
+      await sequelize.authenticate();
+      logger.log('Successful connection');
+      return true;
+    } catch (error) {
+      logger.error('Error connecting to the archive database', error);
+      logger.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      await sequelize.close();
+    }
+    return false;
+  }
+
   static register(config: AuditLogArchiveConfig): DynamicModule {
     const providers = [
       {
@@ -58,9 +90,20 @@ export class AuditLogArchiveModule {
 
           config.archiveDatabase.autoLoadModels = false;
 
+          config.archiveDatabase.dialectOptions = {
+            ...config.archiveDatabase.dialectOptions,
+            connectTimeout: 1 * 60 * 1000,
+            options: {
+              requestTimeout: 1 * 60 * 1000,
+            },
+          };
+
           const sequelize = new Sequelize({
             ...config.archiveDatabase,
+            logging: null,
+            retry: null,
           });
+
           sequelize.addModels(config.archiveDatabase.models);
           await sequelize.sync();
           return sequelize;

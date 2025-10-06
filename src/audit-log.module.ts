@@ -1,4 +1,4 @@
-import { DynamicModule, Module } from '@nestjs/common';
+import { DynamicModule, Logger, Module } from '@nestjs/common';
 
 import { AuditLogArchiveModule } from './audit-log-archive/audit-log-archive.module';
 import { AuditLogCoreModule } from './audit-log-core/audit-log-core.module';
@@ -13,18 +13,24 @@ import { AuditLogCleaningTask } from './tasks/audit-log-cleaning.task';
 
 @Module({})
 export class AuditLogModule {
-  static register(
+  static async register(
     options: AuditLogModuleOptions = {
-      logRetentionDays: 30,
-      cleaningCronSchedule: '* */12 * * *',
+      logRetentionDays: 5,
+      cleaningCronSchedule: '0 0 * * *',
     },
-  ): DynamicModule {
+  ): Promise<DynamicModule> {
     const imports = [];
     const exports = [];
     const providers = [];
     const auditedTables = options.auditedTables ?? [];
 
-    if (options.enableArchive) {
+    if (
+      options.enableArchive &&
+      (await AuditLogArchiveModule.testSequelizeConnection({
+        ...options.enableArchive,
+        archiveCutoffDays: options.logRetentionDays,
+      }))
+    ) {
       imports.push(AuditLogArchiveModule.register(options.enableArchive));
     } else {
       providers.push(AuditLogCleaningTask);

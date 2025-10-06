@@ -123,21 +123,21 @@ export class AuditLogService {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - this.logRetentionDays);
 
-    await this.auditLogEventModel.destroy({
-      where: {
-        createdAt: {
-          [Op.lt]: cutoffDate,
-        },
-      },
-    });
+    // await this.auditLogEventModel.destroy({
+    //   where: {
+    //     createdAt: {
+    //       [Op.lt]: cutoffDate,
+    //     },
+    //   },
+    // });
 
-    await this.auditLogEntityModel.destroy({
-      where: {
-        createdAt: {
-          [Op.lt]: cutoffDate,
-        },
-      },
-    });
+    // await this.auditLogEntityModel.destroy({
+    //   where: {
+    //     createdAt: {
+    //       [Op.lt]: cutoffDate,
+    //     },
+    //   },
+    // });
 
     await this.auditLogErrorModel.destroy({
       where: {
@@ -163,13 +163,13 @@ export class AuditLogService {
       },
     });
 
-    await this.auditLogLoginModel.destroy({
-      where: {
-        createdAt: {
-          [Op.lt]: cutoffDate,
-        },
-      },
-    });
+    // await this.auditLogLoginModel.destroy({
+    //   where: {
+    //     createdAt: {
+    //       [Op.lt]: cutoffDate,
+    //     },
+    //   },
+    // });
 
     await this.auditLogDetailModel.destroy({
       where: {
