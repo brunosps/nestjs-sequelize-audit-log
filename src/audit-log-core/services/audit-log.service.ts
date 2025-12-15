@@ -193,43 +193,47 @@ export class AuditLogService {
   }
 
   async registerLog(logType: AuditLogType, data: AuditLogDataType) {
-    const userInformation = this.getUserInformation();
+    try {
+      const userInformation = this.getUserInformation();
 
-    const log = await this.auditLogModel.create({
-      id: uuidv4(),
-      logType: logType,
-      userId: userInformation.id,
-      ipAddress: userInformation.ip,
-    } as CreationAttributes<AuditLogModel>);
+      const log = await this.auditLogModel.create({
+        id: uuidv4(),
+        logType: logType,
+        userId: userInformation.id,
+        ipAddress: userInformation.ip,
+      } as CreationAttributes<AuditLogModel>);
 
-    switch (logType) {
-      case 'EVENT':
-        await this._logEvent(log.id, data as AuditLogEventLogType);
-        break;
-      case 'ENTITY':
-        await this._logEntity(log.id, data as AuditLogDatabaseType);
-        break;
-      case 'ERROR':
-        await this._logError(log.id, data as AuditLogErrorType);
-        break;
-      case 'INTEGRATION':
-        await this._logIntegration(log.id, data as AuditLogHttpIntegrationType);
-        break;
-      case 'REQUEST':
-        await this._logRequest(log.id, data as AuditLogRequestType);
-        break;
-      case 'LOGIN':
-        data = data as AuditLogLoginType;
-        log.userId = data.userId || userInformation.id;
-        log.save();
-        await this._logLogin(log.id, log.userId, data as AuditLogLoginType);
-        if (data.registerRequest) {
-          await this._logRequest(log.id, data.request as AuditLogRequestType);
-        }
-        break;
+      switch (logType) {
+        case 'EVENT':
+          await this._logEvent(log.id, data as AuditLogEventLogType);
+          break;
+        case 'ENTITY':
+          await this._logEntity(log.id, data as AuditLogDatabaseType);
+          break;
+        case 'ERROR':
+          await this._logError(log.id, data as AuditLogErrorType);
+          break;
+        case 'INTEGRATION':
+          await this._logIntegration(log.id, data as AuditLogHttpIntegrationType);
+          break;
+        case 'REQUEST':
+          await this._logRequest(log.id, data as AuditLogRequestType);
+          break;
+        case 'LOGIN':
+          data = data as AuditLogLoginType;
+          log.userId = data.userId || userInformation.id;
+          await log.save();
+          await this._logLogin(log.id, log.userId, data as AuditLogLoginType);
+          if (data.registerRequest) {
+            await this._logRequest(log.id, data.request as AuditLogRequestType);
+          }
+          break;
 
-      default:
-        break;
+        default:
+          break;
+      }
+    } catch (error) {
+      console.error(`Error registering audit log (${logType}):`, error);
     }
   }
   private async _logRequest(
