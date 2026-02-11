@@ -1,6 +1,10 @@
+import { Logger } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
+import { createClientAsync } from 'soap';
 
 import { AuditLogSoapClientService } from '../services/audit-log-soap-client.service';
+
+const logger = new Logger('SoapClientUtils');
 
 let moduleRef: ModuleRef;
 let soapClientService: AuditLogSoapClientService;
@@ -15,9 +19,10 @@ export async function createAuditSoapClient(
   endpoint?: string,
 ): Promise<any> {
   if (!moduleRef) {
-    throw new Error(
-      'SoapClientUtils não foi inicializado. Chame initializeSoapClientUtils primeiro.',
+    logger.warn(
+      'SoapClientUtils não foi inicializado pelo módulo. Criando client SOAP sem audit logging.',
     );
+    return createClientAsync(wsdl, options, endpoint);
   }
 
   if (!soapClientService) {

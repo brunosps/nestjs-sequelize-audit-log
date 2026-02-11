@@ -4,16 +4,26 @@ import {
   SoapClient,
 } from '../soap-client.utils';
 
+jest.mock('soap', () => ({
+  createClientAsync: jest.fn().mockResolvedValue({ on: jest.fn() }),
+}));
+
 describe('soap-client.utils', () => {
   describe('createAuditSoapClient', () => {
-    it('should throw when not initialized', async () => {
+    it('should fallback to plain SOAP client when not initialized', async () => {
       // Reset module state
       jest.resetModules();
+      const { createClientAsync } = require('soap');
       const { createAuditSoapClient: freshCreate } = require('../soap-client.utils');
 
-      await expect(freshCreate('http://test.wsdl')).rejects.toThrow(
-        'SoapClientUtils não foi inicializado',
+      const client = await freshCreate('http://test.wsdl');
+
+      expect(createClientAsync).toHaveBeenCalledWith(
+        'http://test.wsdl',
+        undefined,
+        undefined,
       );
+      expect(client).toBeDefined();
     });
 
     it('should create client through SoapClientService when initialized', async () => {
