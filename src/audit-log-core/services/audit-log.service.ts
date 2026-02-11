@@ -24,6 +24,7 @@ import {
   AuditLogGetInfoFromRequest,
   AuditLogRequest,
 } from '../../interfaces/audit-log-module-options.interface';
+import { compressPayload } from '../../utils/compressPayload';
 import { extractClientIp } from '../../utils/ip';
 import { sanitizePayload } from '../../utils/sanitizePayload';
 
@@ -256,8 +257,8 @@ export class AuditLogService {
       responseStatus,
       responseSize,
       duration,
-      payload,
-      responseBody: sanitizePayload(responseBody),
+      payload: compressPayload(payload),
+      responseBody: compressPayload(sanitizePayload(responseBody)),
       createdAt: new Date(),
     } as CreationAttributes<AuditLogRequestModel>);
   }
@@ -284,40 +285,22 @@ export class AuditLogService {
       duration,
     }: AuditLogHttpIntegrationType,
   ) {
-    const chunkGroupId = uuidv4();
-    const context = {
-      logId,
-      chunkGroupId,
-      integrationName,
-      method,
-      userId: this.getUserInformation().id,
-    };
-
-    const processedRequestPayload =
-      await this.payloadDetailsService.processPayload(
-        chunkGroupId,
-        requestPayload,
-        'request',
-        'INTEGRATION',
-        context,
-      );
-
-    const processedResponsePayload =
-      await this.payloadDetailsService.processPayload(
-        chunkGroupId,
-        responsePayload,
-        'response',
-        'INTEGRATION',
-        context,
-      );
+    const requestStr =
+      typeof requestPayload === 'string'
+        ? requestPayload
+        : JSON.stringify(requestPayload ?? '');
+    const responseStr =
+      typeof responsePayload === 'string'
+        ? responsePayload
+        : JSON.stringify(responsePayload ?? '');
 
     await this.auditLogIntegrationModel.create({
-      id: chunkGroupId,
+      id: uuidv4(),
       logId: logId,
       integrationName,
       method,
-      requestPayload: processedRequestPayload,
-      responsePayload: processedResponsePayload,
+      requestPayload: compressPayload(requestStr),
+      responsePayload: compressPayload(responseStr),
       status,
       duration,
     } as CreationAttributes<AuditLogIntegrationModel>);
@@ -369,7 +352,7 @@ export class AuditLogService {
 
   private async _logEvent(
     logId: string,
-    { type, description, details }: AuditLogEventLogType,
+    { type, description, details, eventStatus }: AuditLogEventLogType,
   ) {
     await this.auditLogEventModel.create({
       id: uuidv4(),
@@ -377,6 +360,7 @@ export class AuditLogService {
       eventType: type,
       eventDescription: description,
       eventDetails: JSON.stringify(details),
+      eventStatus: eventStatus || 'SUCCESS',
     } as CreationAttributes<AuditLogEventModel>);
   }
 }

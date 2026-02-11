@@ -8,7 +8,18 @@ import {
   PayloadDetailsConfig,
   PayloadWithDetails,
 } from '../../interfaces/payload-details.interface';
+import {
+  compressPayload,
+  decompressPayload,
+  isCompressed,
+} from '../../utils/compressPayload';
 
+/**
+ * @deprecated PayloadDetailsService is deprecated. New payloads use gzip+Base64
+ * compression via `compressPayload()` / `decompressPayload()` from `src/utils/compressPayload.ts`.
+ * This service is retained only for backward compatibility with existing chunked data
+ * in `audit_logs_details`. Use `getFullPayload()` to read legacy chunked payloads.
+ */
 @Injectable()
 export class PayloadDetailsService {
   private static config: PayloadDetailsConfig = {
@@ -22,6 +33,10 @@ export class PayloadDetailsService {
     private readonly auditLogDetailModel: typeof AuditLogDetailModel,
   ) {}
 
+  /**
+   * @deprecated Use `compressPayload()` from `src/utils/compressPayload.ts` instead.
+   * This method now delegates to gzip compression instead of chunking.
+   */
   async processPayload(
     chunkGroupId: string,
     payload: any,
@@ -43,22 +58,8 @@ export class PayloadDetailsService {
 
       const payloadStr =
         typeof payload === 'string' ? payload : JSON.stringify(payload);
-      const originalSize = Buffer.byteLength(payloadStr, 'utf8');
 
-      if (originalSize <= PayloadDetailsService.config.detailsTableThreshold!) {
-        return payloadStr;
-      }
-
-      const result = await this.storeInDetailsTable(
-        chunkGroupId,
-        payloadStr,
-        type,
-        logType,
-        originalSize,
-        context,
-      );
-
-      return result;
+      return compressPayload(payloadStr);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -66,87 +67,18 @@ export class PayloadDetailsService {
     }
   }
 
-  private async storeInDetailsTable(
-    chunkGroupId: string,
-    payloadStr: string,
-    type: string,
-    logType: string,
-    originalSize: number,
-    context: any,
-  ): Promise<string> {
-    try {
-      const contentToStore = payloadStr;
-      const result = await this.storeInChunks(
-        chunkGroupId,
-        contentToStore,
-        type,
-        logType,
-        originalSize,
-        context,
-      );
-      return result;
-    } catch (error) {
-      const truncated = `${payloadStr.substring(0, PayloadDetailsService.config.previewSize!)} \n... [PAYLOAD TRUNCADO - ERRO NA TABELA DE DETALHES] \n ${error}`;
-      return truncated;
-    }
-  }
-
-  private async storeInChunks(
-    chunkGroupId: string,
-    content: string,
-    type: string,
-    logType: string,
-    originalSize: number,
-    context: any,
-  ): Promise<string> {
-    const maxChunkSize = PayloadDetailsService.config.maxChunkSize!;
-    const chunks: string[] = [];
-
-    for (let i = 0; i < content.length; i += maxChunkSize) {
-      chunks.push(content.substring(i, i + maxChunkSize));
-    }
-
-    const chunkPromises = chunks.map(async (chunk, index) => {
-      const chunkId = uuidv4();
-      const sequence = index + 1;
-      const savedChunk = await this.auditLogDetailModel.create({
-        id: chunkId,
-        logId: context.logId,
-        payloadType: type,
-        logType: logType,
-        chunkGroupId: chunkGroupId,
-        chunkSequence: sequence,
-        totalChunks: chunks.length,
-        originalSize: originalSize,
-        payloadContent: chunk,
-        userId: context.userId,
-      } as CreationAttributes<AuditLogDetailModel>);
-      return savedChunk;
-    });
-
-    await Promise.all(chunkPromises);
-
-    const detailsReference: PayloadWithDetails = {
-      _detailsTable: true,
-      _chunkGroupId: chunkGroupId,
-      _totalChunks: chunks.length,
-      _originalSize: originalSize,
-      _timestamp: new Date().toISOString(),
-      _type: type,
-      _preview: content.substring(0, PayloadDetailsService.config.previewSize!),
-      _context: {
-        logType,
-        integrationName: context.integrationName,
-        method: context.method,
-        userId: context.userId,
-      },
-    };
-
-    return JSON.stringify(detailsReference);
-  }
-
+  /**
+   * Retrieves the full payload from a stored value. Handles three formats:
+   * 1. Legacy chunked payloads (`PayloadWithDetails` with `_detailsTable: true`)
+   * 2. Compressed payloads (prefixed with `GZ:`)
+   * 3. Plain text payloads (returned as-is)
+   */
   async getFullPayload(payloadReference: string): Promise<string> {
     try {
+      if (isCompressed(payloadReference)) {
+        return decompressPayload(payloadReference);
+      }
+
       const parsed = JSON.parse(payloadReference);
 
       if (!parsed._detailsTable) {
