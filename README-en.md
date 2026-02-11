@@ -8,9 +8,11 @@ A comprehensive audit logging module for NestJS applications that provides detai
 - 📝 **Request Logging**: HTTP request/response logging with user identification
 - ❌ **Error Logging**: Comprehensive error tracking and reporting
 - 🔗 **Integration Logging**: External API and service integration monitoring
+- 🧼 **Audited SOAP Client**: Built-in SOAP client with full automatic audit logging
 - 👤 **Authentication Route Tracking**: Special handling for authentication endpoints
 - 📦 **Archive Support**: Configurable data archiving for long-term storage
 - 🌐 **IP Address Tracking**: Client IP address logging
+- 🗃️ **Payload Compression**: Automatic gzip + Base64 compression of large payloads
 - 🔧 **Flexible Configuration**: Extensive customization options
 
 ## Installation
@@ -18,6 +20,34 @@ A comprehensive audit logging module for NestJS applications that provides detai
 ```bash
 npm install @your-org/audit-log
 ```
+
+### Installing Migrations
+
+After installing the package, copy the migrations to your project:
+
+```bash
+npx audit-log-install-migrations migrations
+```
+
+Or specify a custom directory:
+
+```bash
+npx audit-log-install-migrations database/migrations
+npx audit-log-install-migrations src/migrations
+```
+
+This command will:
+- Copy all necessary migrations to the specified directory
+- Automatically add timestamps to migration filenames
+- Ensure no conflicts with existing migrations
+
+#### Available Migrations
+
+| Migration | Description |
+|---|---|
+| `audit-log-migrations.js` | Creates the 8 main tables with FK cascades |
+| `audit-log-performance-indexes.js` | ~35 performance indexes |
+| `audit-log-event-status.js` | Adds `event_status` column to the `audit_logs_event` table |
 
 ## Quick Start
 
@@ -120,7 +150,82 @@ AuditLogModule.forRoot({
 });
 ```
 
-#### 5. Authentication Routes
+#### 5. Event Logging
+
+Event logging is enabled by default and can be used in two ways.
+
+Each event automatically records an `eventStatus` (`SUCCESS` or `ERROR`) based on the method execution result.
+
+**Using the @AuditLogEvent Decorator:**
+
+```typescript
+import { AuditLogEvent } from 'nestjs-sequelize-audit-log';
+
+@AuditLogEvent({
+  eventType: "UPDATE_USER_PASSWORD",
+  eventDescription: "User password update",
+  getUserId: (args, result) => args[0].userId,
+  getDetails: (args, result) => ({
+    userId: args[0].userId,
+    success: result.success
+  }),
+  onError: (args, error) => ({
+    userId: args[0].userId,
+    errorMessage: error.message,
+  }),
+})
+async updatePassword(input: UpdatePasswordInput): Promise<UpdatePasswordOutput> {
+  return await this.passwordService.update(input);
+}
+```
+
+**Decorator Options:**
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `eventType` | `string` | Yes | Event type identifier |
+| `eventDescription` | `string` | Yes | Event description |
+| `getUserId` | `(args, result) => string` | Yes | Extracts the user ID |
+| `getIpAddress` | `(args, result) => string` | No | Extracts the IP address (default: `'0.0.0.0'`) |
+| `getDetails` | `(args, result) => Record<string, any>` | No | Event details on **success** |
+| `onError` | `(args, error) => Record<string, any>` | No | Event details on **error**. If not provided, logs `{ params, error: { message, name } }` |
+
+**Using Direct Service Injection:**
+
+```typescript
+import { AuditLogService } from 'nestjs-sequelize-audit-log';
+import { Injectable } from '@nestjs/common';
+
+@Injectable()
+export class UserService {
+  constructor(
+    private readonly userRepository: UserRepository,
+    private readonly auditLogService: AuditLogService,
+  ) {}
+
+  async validateUser(input: ValidateUserInput): Promise<boolean> {
+    const user = await this.userRepository.findByEmail(input.email);
+
+    this.auditLogService.logEvent({
+      type: 'USER_VALIDATION',
+      description: 'User credential validation',
+      details: {
+        email: input.email,
+        success: !!user
+      },
+      eventStatus: user ? 'SUCCESS' : 'ERROR',
+    });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    return true;
+  }
+}
+```
+
+#### 6. Authentication Routes
 
 Special handling for authentication endpoints:
 
@@ -143,7 +248,7 @@ AuditLogModule.forRoot({
 });
 ```
 
-#### 6. Archive Configuration
+#### 7. Archive Configuration
 
 Configure data archiving for long-term storage in a separate database:
 
@@ -295,6 +400,76 @@ The archive system creates mirrored models for all audit log types:
 - `ArchiveLogRequestModel` - Request logs
 - `ArchiveLogLoginModel` - Login logs
 - `ArchiveLogDetailModel` - Detailed audit information
+
+## Payload Compression Utilities
+
+The library automatically compresses large payloads (> 1 KB) using gzip + Base64 to reduce database storage usage. Utilities are available for manual compression and decompression:
+
+```typescript
+import { compressPayload, decompressPayload, isCompressed } from 'nestjs-sequelize-audit-log';
+
+// Compresses if the value exceeds the threshold (default: 1024 bytes)
+const compressed = compressPayload(largeJsonString);
+// Result: 'GZ:H4sIAAAAAAAAA...' (GZ: prefix indicates a compressed value)
+
+// Check if a value is compressed
+if (isCompressed(compressed)) {
+  const original = decompressPayload(compressed);
+}
+```
+
+Compression is automatically applied to the following fields:
+- **Integration Log**: `requestPayload`, `responsePayload`
+- **Request Log**: `payload`, `responseBody`
+
+## SOAP Client with Automatic Auditing
+
+The library includes a built-in SOAP client that automatically logs all SOAP calls and responses for comprehensive auditing.
+
+### Using createAuditSoapClient
+
+**⚠️ IMPORTANT**: Always use `createAuditSoapClient` to create SOAP clients. This is the only recommended function to ensure full automatic audit logging.
+
+```typescript
+import { createAuditSoapClient } from 'nestjs-sequelize-audit-log';
+import { Injectable, Logger } from '@nestjs/common';
+
+@Injectable()
+export class ExternalSystemService {
+  private readonly logger = new Logger(ExternalSystemService.name);
+
+  async getClient(): Promise<any> {
+    const client = await createAuditSoapClient(
+      process.env.EXTERNAL_WSDL_URL!,
+      { wsdl_options: { timeout: 60000 } },
+      process.env.EXTERNAL_ENDPOINT
+    );
+
+    // Configure authentication if needed
+    if (process.env.EXTERNAL_USER && process.env.EXTERNAL_PASSWORD) {
+      const { BasicAuthSecurity } = await import('soap');
+      client.setSecurity(new BasicAuthSecurity(
+        process.env.EXTERNAL_USER,
+        process.env.EXTERNAL_PASSWORD
+      ));
+    }
+
+    return client;
+  }
+
+  async executeOperation(data: any) {
+    const client = await this.getClient();
+    // All calls are automatically audited
+    return await client.MyOperationAsync(data);
+  }
+}
+```
+
+### SOAP Client Features
+
+- **Automatic Auditing**: Full logging of SOAP requests, responses, errors, and duration
+- **Smart Extraction**: Automatic detection of SOAP method names and integration names from WSDL URLs
+- **Always use `createAuditSoapClient`** instead of `soap.createClientAsync()` to preserve audit logging
 
 ## Best Practices
 

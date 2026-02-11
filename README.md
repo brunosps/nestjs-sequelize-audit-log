@@ -40,6 +40,14 @@ Este comando irá:
 - Adicionar timestamp automático aos arquivos de migração
 - Garantir que não haja conflitos com migrações existentes
 
+#### Migrações Disponíveis
+
+| Migração | Descrição |
+|---|---|
+| `audit-log-migrations.js` | Criação das 8 tabelas principais com FK cascades |
+| `audit-log-performance-indexes.js` | ~35 índices de performance |
+| `audit-log-event-status.js` | Adiciona coluna `event_status` na tabela `audit_logs_event` |
+
 ## Início Rápido
 
 ```typescript
@@ -148,7 +156,9 @@ AuditLogModule.register({
 
 #### 5. Log de Eventos
 
-O log de eventos está habilitado por padrão e pode ser usado de duas formas:
+O log de eventos está habilitado por padrão e pode ser usado de duas formas.
+
+Cada evento registra automaticamente um `eventStatus` (`SUCCESS` ou `ERROR`) com base no resultado da execução do método.
 
 **Usando o Decorator @AuditLogEvent:**
 
@@ -158,16 +168,32 @@ import { AuditLogEvent } from 'nestjs-sequelize-audit-log';
 @AuditLogEvent({
   eventType: "UPDATE_USER_PASSWORD",
   eventDescription: "Atualização de senha do usuário",
+  getUserId: (args, result) => args[0].userId,
   getDetails: (args, result) => ({
     userId: args[0].userId,
     success: result.success
   }),
-  getUserId: (args, result) => args[0].userId
+  onError: (args, error) => ({
+    userId: args[0].userId,
+    errorMessage: error.message,
+  }),
 })
 async updatePassword(updatePasswordInput: UpdatePasswordInput): Promise<UpdatePasswordOutput> {
   // Lógica de atualização de senha
   return await this.passwordService.update(updatePasswordInput);
 }
+```
+
+**Opções do Decorator:**
+
+| Opção | Tipo | Obrigatório | Descrição |
+|---|---|---|---|
+| `eventType` | `string` | Sim | Tipo do evento |
+| `eventDescription` | `string` | Sim | Descrição do evento |
+| `getUserId` | `(args, result) => string` | Sim | Extrai o ID do usuário |
+| `getIpAddress` | `(args, result) => string` | Não | Extrai o endereço IP (padrão: `'0.0.0.0'`) |
+| `getDetails` | `(args, result) => Record<string, any>` | Não | Detalhes do evento em caso de **sucesso** |
+| `onError` | `(args, error) => Record<string, any>` | Não | Detalhes do evento em caso de **erro**. Se não fornecido, registra `{ params, error: { message, name } }` |
 ```
 
 **Usando Injeção Direta do Service:**
@@ -186,14 +212,15 @@ export class UserService {
   async validateUser(input: ValidateUserInput): Promise<boolean> {
     const user = await this.userRepository.findByEmail(input.email);
     
-    // Log manual do evento
+    // Log manual do evento com status
     this.auditLogService.logEvent({
       type: 'USER_VALIDATION',
       description: 'Validação de credenciais do usuário',
       details: {
         email: input.email,
         success: !!user
-      }
+      },
+      eventStatus: user ? 'SUCCESS' : 'ERROR',
     });
 
     if (!user) {
@@ -391,6 +418,27 @@ O sistema de archive cria modelos espelhados para todos os tipos de log de audit
 - `ArchiveLogRequestModel` - Logs de requisição
 - `ArchiveLogLoginModel` - Logs de login
 - `ArchiveLogDetailModel` - Informações detalhadas de auditoria
+
+## Utilitários de Compressão de Payload
+
+A biblioteca comprime automaticamente payloads grandes (> 1 KB) usando gzip + Base64 para reduzir o uso de armazenamento no banco de dados. Utilitários estão disponíveis para compressão e descompressão manual:
+
+```typescript
+import { compressPayload, decompressPayload, isCompressed } from 'nestjs-sequelize-audit-log';
+
+// Comprime se o valor exceder o threshold (padrão: 1024 bytes)
+const compressed = compressPayload(largeJsonString);
+// Resultado: 'GZ:H4sIAAAAAAAAA...' (prefixo GZ: indica valor comprimido)
+
+// Verifica se o valor está comprimido
+if (isCompressed(compressed)) {
+  const original = decompressPayload(compressed);
+}
+```
+
+A compressão é aplicada automaticamente nos seguintes campos:
+- **Log de Integração**: `requestPayload`, `responsePayload`
+- **Log de Requisição**: `payload`, `responseBody`
 
 ## Melhores Práticas
 
