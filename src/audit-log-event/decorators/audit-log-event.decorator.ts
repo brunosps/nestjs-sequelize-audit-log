@@ -8,6 +8,7 @@ export interface AuditLogEventOptions {
   getUserId: (args: any[], result: any) => string;
   getIpAddress?: (args: any[], result: any) => string;
   getDetails?: (args: any[], result: any) => Record<string, any>;
+  onError?: (args: any[], error: any) => Record<string, any>;
 }
 
 export function AuditLogEvent(options: AuditLogEventOptions) {
@@ -23,10 +24,11 @@ export function AuditLogEvent(options: AuditLogEventOptions) {
       const isController =
         Reflect.getMetadata('__isController__', target.constructor) !==
         undefined;
-      let userId;
-      let ipAddress;
-      let details;
-      let result;
+      let userId: string;
+      let ipAddress: string;
+      let details: Record<string, any>;
+      let eventStatus: string;
+      let result: any;
 
       try {
         result = await originalMethod.apply(this, args);
@@ -38,14 +40,22 @@ export function AuditLogEvent(options: AuditLogEventOptions) {
         details = options.getDetails
           ? options.getDetails(args, result)
           : { params: args, result: result };
+        eventStatus = 'SUCCESS';
       } catch (err) {
         userId = options.getUserId(args, err);
         ipAddress = options.getIpAddress
           ? options.getIpAddress(args, err)
           : '0.0.0.0';
-        details = options.getDetails
-          ? options.getDetails(args, err)
-          : { params: args, result: err };
+        details = options.onError
+          ? options.onError(args, err)
+          : {
+              params: args,
+              error:
+                err instanceof Error
+                  ? { message: err.message, name: err.name }
+                  : err,
+            };
+        eventStatus = 'ERROR';
         result = err;
       }
 
@@ -59,6 +69,7 @@ export function AuditLogEvent(options: AuditLogEventOptions) {
               userId: userId,
               ipAddress: ipAddress,
               details: { details },
+              eventStatus: eventStatus,
             });
           }
         } catch (error) {

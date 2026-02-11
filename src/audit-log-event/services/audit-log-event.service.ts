@@ -8,6 +8,7 @@ export interface AuditLogEventLogType {
   userId?: string;
   ipAddress?: string;
   details?: Record<string, any>;
+  eventStatus?: string;
 }
 
 @Injectable()

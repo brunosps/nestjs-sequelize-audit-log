@@ -67,6 +67,14 @@ export class AuditLogEventModel extends Model<AuditLogEventModel> {
   })
   eventDetails?: string;
 
+  @Default('SUCCESS')
+  @Column({
+    type: DataType.STRING,
+    allowNull: false,
+    field: 'event_status',
+  })
+  eventStatus!: string;
+
   @CreatedAt
   @Default(DataType.NOW)
   @Column({
