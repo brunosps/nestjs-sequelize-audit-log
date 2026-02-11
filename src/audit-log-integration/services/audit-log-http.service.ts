@@ -1,5 +1,5 @@
 import { HttpService } from '@nestjs/axios';
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 
 import { AuditLogService } from '../../audit-log-core/services/audit-log.service';
@@ -18,13 +18,21 @@ interface AxiosRequestConfigWithMetadata extends InternalAxiosRequestConfig {
 
 @Injectable()
 export class AuditLogHttpService implements OnModuleInit {
+  private readonly logger = new Logger(AuditLogHttpService.name);
+
   constructor(
     private readonly httpService: HttpService,
     @Inject(AuditLogService)
     private readonly auditLogService: AuditLogService,
+    @Inject('ENABLE_INTEGRATION_LOGGING')
+    private readonly enableLogging: boolean,
   ) {}
 
   onModuleInit() {
+    if (!this.enableLogging) {
+      this.logger.log('Integration HTTP logging is disabled');
+      return;
+    }
     const axiosInstance = this.httpService.axiosRef;
 
     axiosInstance.interceptors.request.use(

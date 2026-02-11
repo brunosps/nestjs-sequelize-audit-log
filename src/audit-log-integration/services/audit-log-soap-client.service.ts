@@ -19,6 +19,8 @@ export class AuditLogSoapClientService {
   constructor(
     @Inject(AuditLogService)
     private readonly auditLogService: AuditLogService,
+    @Inject('ENABLE_INTEGRATION_LOGGING')
+    private readonly enableLogging: boolean,
   ) {}
 
   async createAsyncClient(
@@ -27,6 +29,9 @@ export class AuditLogSoapClientService {
     endpoint?: string,
   ): Promise<Client> {
     const client = await createClientAsync(wsdl, options, endpoint);
+    if (!this.enableLogging) {
+      return client;
+    }
     return this.setupClientLogging(client, wsdl);
   }
 

@@ -52,11 +52,12 @@ export class AuditLogModule {
       imports.push(AuditLogErrorModule.register());
     }
 
-    if (options.enableIntegrationLogging) {
-      imports.push(AuditLogIntegrationModule.register());
-
-      exports.push(AuditLogIntegrationModule);
-    }
+    imports.push(
+      AuditLogIntegrationModule.register({
+        enableLogging: !!options.enableIntegrationLogging,
+      }),
+    );
+    exports.push(AuditLogIntegrationModule);
 
     if (options.enableRequestLogging) {
       imports.push(
