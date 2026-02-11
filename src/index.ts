@@ -18,6 +18,11 @@ export {
 
 // Utility exports
 export { extractClientIp } from './utils/ip';
+export {
+  compressPayload,
+  decompressPayload,
+  isCompressed,
+} from './utils/compressPayload';
 
 // Interface exports
 export type { AuditLogModuleOptions } from './interfaces/audit-log-module-options.interface';
