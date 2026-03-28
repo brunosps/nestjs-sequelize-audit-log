@@ -27,8 +27,9 @@ describe('AuditLogDatabaseService', () => {
   describe('onModuleInit', () => {
     it('should setup hooks when audited tables are configured', async () => {
       await service.onModuleInit();
-      expect(mockSequelize.addHook).toHaveBeenCalledTimes(7);
+      expect(mockSequelize.addHook).toHaveBeenCalledTimes(8);
       expect(registeredHooks).toHaveProperty('afterCreate');
+      expect(registeredHooks).toHaveProperty('afterBulkCreate');
       expect(registeredHooks).toHaveProperty('afterUpdate');
       expect(registeredHooks).toHaveProperty('afterDestroy');
       expect(registeredHooks).toHaveProperty('beforeBulkUpdate');
@@ -81,6 +82,69 @@ describe('AuditLogDatabaseService', () => {
       };
 
       await registeredHooks['afterCreate'](instance, {});
+      expect(mockAuditLogService.registerLog).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('afterBulkCreate hook', () => {
+    it('should log CREATE for each instance in bulk create', async () => {
+      await service.onModuleInit();
+
+      const instances = [
+        {
+          constructor: {
+            tableName: 'users',
+            rawAttributes: { id: { primaryKey: true } },
+          },
+          dataValues: { id: 1, name: 'John' },
+        },
+        {
+          constructor: {
+            tableName: 'users',
+            rawAttributes: { id: { primaryKey: true } },
+          },
+          dataValues: { id: 2, name: 'Jane' },
+        },
+      ];
+
+      await registeredHooks['afterBulkCreate'](instances, {});
+      expect(mockAuditLogService.registerLog).toHaveBeenCalledTimes(2);
+      expect(mockAuditLogService.registerLog).toHaveBeenCalledWith(
+        'ENTITY',
+        expect.objectContaining({
+          action: 'CREATE',
+          entity: 'users',
+          changedValues: { id: 1, name: 'John' },
+        }),
+      );
+      expect(mockAuditLogService.registerLog).toHaveBeenCalledWith(
+        'ENTITY',
+        expect.objectContaining({
+          action: 'CREATE',
+          entity: 'users',
+          changedValues: { id: 2, name: 'Jane' },
+        }),
+      );
+    });
+
+    it('should not log for non-audited tables in bulk create', async () => {
+      await service.onModuleInit();
+
+      const instances = [
+        {
+          constructor: { tableName: 'sessions' },
+          dataValues: { id: 1 },
+        },
+      ];
+
+      await registeredHooks['afterBulkCreate'](instances, {});
+      expect(mockAuditLogService.registerLog).not.toHaveBeenCalled();
+    });
+
+    it('should not log for empty instances array', async () => {
+      await service.onModuleInit();
+
+      await registeredHooks['afterBulkCreate']([], {});
       expect(mockAuditLogService.registerLog).not.toHaveBeenCalled();
     });
   });

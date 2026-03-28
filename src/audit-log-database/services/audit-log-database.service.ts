@@ -113,6 +113,32 @@ export class AuditLogDatabaseService implements OnModuleInit {
     );
 
     this.sequelize.addHook(
+      'afterBulkCreate',
+      async (instances: any[], options: any) => {
+        if (
+          instances.length > 0 &&
+          this.shouldAuditTable(instances[0].constructor.tableName)
+        ) {
+          const tableName = instances[0].constructor.tableName;
+          try {
+            for (const instance of instances) {
+              const pkInfo = this.extractPrimaryKeyInfo(instance);
+              await this.registerLog(
+                'CREATE',
+                tableName,
+                instance.dataValues,
+                pkInfo.entityPk,
+                pkInfo.entityKey,
+              );
+            }
+          } catch (error) {
+            console.error('Error processing individual bulk creates:', error);
+          }
+        }
+      },
+    );
+
+    this.sequelize.addHook(
       'afterUpdate',
       async (instance: any, options: any) => {
         if (this.shouldAuditTable(instance.constructor.tableName)) {
