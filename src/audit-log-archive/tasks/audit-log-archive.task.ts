@@ -4,9 +4,12 @@ import { CronJob } from 'cron';
 
 import { AuditLogArchiveService } from '../services/audit-log-archive.service';
 
+const ARCHIVE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
 @Injectable()
 export class AuditLogArchiveTask {
   private readonly logger = new Logger(AuditLogArchiveTask.name);
+  private isRunning = false;
 
   onModuleInit() {
     const job = new CronJob(
@@ -28,8 +31,31 @@ export class AuditLogArchiveTask {
   ) {}
 
   handleArchiving = async () => {
+    if (this.isRunning) {
+      this.logger.warn(
+        'Archive task already running — skipping this execution',
+      );
+      return;
+    }
+
+    this.isRunning = true;
     this.logger.log('Starting scheduled audit log archiving...');
-    await this.archiveService.execute();
-    this.logger.log('Scheduled audit log archiving completed.');
+
+    try {
+      await Promise.race([
+        this.archiveService.execute(),
+        new Promise<void>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Archive timeout exceeded')),
+            ARCHIVE_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+      this.logger.log('Scheduled audit log archiving completed.');
+    } catch (error) {
+      this.logger.error('Archive task error:', error);
+    } finally {
+      this.isRunning = false;
+    }
   };
 }
