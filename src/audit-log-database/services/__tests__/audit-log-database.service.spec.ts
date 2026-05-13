@@ -15,6 +15,7 @@ describe('AuditLogDatabaseService', () => {
     };
     mockAuditLogService = {
       registerLog: jest.fn(),
+      bulkRegisterLog: jest.fn(),
     };
 
     service = new AuditLogDatabaseService(
@@ -87,7 +88,7 @@ describe('AuditLogDatabaseService', () => {
   });
 
   describe('afterBulkCreate hook', () => {
-    it('should log CREATE for each instance in bulk create', async () => {
+    it('should log CREATE for each instance in bulk create via bulkRegisterLog', async () => {
       await service.onModuleInit();
 
       const instances = [
@@ -108,22 +109,21 @@ describe('AuditLogDatabaseService', () => {
       ];
 
       await registeredHooks['afterBulkCreate'](instances, {});
-      expect(mockAuditLogService.registerLog).toHaveBeenCalledTimes(2);
-      expect(mockAuditLogService.registerLog).toHaveBeenCalledWith(
+      expect(mockAuditLogService.bulkRegisterLog).toHaveBeenCalledTimes(1);
+      expect(mockAuditLogService.bulkRegisterLog).toHaveBeenCalledWith(
         'ENTITY',
-        expect.objectContaining({
-          action: 'CREATE',
-          entity: 'users',
-          changedValues: { id: 1, name: 'John' },
-        }),
-      );
-      expect(mockAuditLogService.registerLog).toHaveBeenCalledWith(
-        'ENTITY',
-        expect.objectContaining({
-          action: 'CREATE',
-          entity: 'users',
-          changedValues: { id: 2, name: 'Jane' },
-        }),
+        expect.arrayContaining([
+          expect.objectContaining({
+            action: 'CREATE',
+            entity: 'users',
+            changedValues: { id: 1, name: 'John' },
+          }),
+          expect.objectContaining({
+            action: 'CREATE',
+            entity: 'users',
+            changedValues: { id: 2, name: 'Jane' },
+          }),
+        ]),
       );
     });
 
@@ -138,14 +138,14 @@ describe('AuditLogDatabaseService', () => {
       ];
 
       await registeredHooks['afterBulkCreate'](instances, {});
-      expect(mockAuditLogService.registerLog).not.toHaveBeenCalled();
+      expect(mockAuditLogService.bulkRegisterLog).not.toHaveBeenCalled();
     });
 
     it('should not log for empty instances array', async () => {
       await service.onModuleInit();
 
       await registeredHooks['afterBulkCreate']([], {});
-      expect(mockAuditLogService.registerLog).not.toHaveBeenCalled();
+      expect(mockAuditLogService.bulkRegisterLog).not.toHaveBeenCalled();
     });
   });
 
@@ -234,7 +234,7 @@ describe('AuditLogDatabaseService', () => {
   });
 
   describe('afterBulkUpdate hook', () => {
-    it('should diff and log changes per record', async () => {
+    it('should diff and log changes per record via bulkRegisterLog', async () => {
       await service.onModuleInit();
 
       const options: any = {
@@ -251,18 +251,20 @@ describe('AuditLogDatabaseService', () => {
       };
 
       await registeredHooks['afterBulkUpdate'](options);
-      expect(mockAuditLogService.registerLog).toHaveBeenCalledWith(
+      expect(mockAuditLogService.bulkRegisterLog).toHaveBeenCalledWith(
         'ENTITY',
-        expect.objectContaining({
-          action: 'UPDATE',
-          changedValues: { name: { from: 'Old', to: 'New' } },
-        }),
+        expect.arrayContaining([
+          expect.objectContaining({
+            action: 'UPDATE',
+            changedValues: { name: { from: 'Old', to: 'New' } },
+          }),
+        ]),
       );
     });
   });
 
   describe('bulk destroy hooks', () => {
-    it('should capture and log deleted records', async () => {
+    it('should capture and log deleted records via bulkRegisterLog', async () => {
       await service.onModuleInit();
 
       const records = [{ id: 1, name: 'Deleted' }];
@@ -279,12 +281,14 @@ describe('AuditLogDatabaseService', () => {
       expect(options.auditBulkDeleteContext).toBeDefined();
 
       await registeredHooks['afterBulkDestroy'](options);
-      expect(mockAuditLogService.registerLog).toHaveBeenCalledWith(
+      expect(mockAuditLogService.bulkRegisterLog).toHaveBeenCalledWith(
         'ENTITY',
-        expect.objectContaining({
-          action: 'DELETE',
-          entity: 'users',
-        }),
+        expect.arrayContaining([
+          expect.objectContaining({
+            action: 'DELETE',
+            entity: 'users',
+          }),
+        ]),
       );
     });
   });

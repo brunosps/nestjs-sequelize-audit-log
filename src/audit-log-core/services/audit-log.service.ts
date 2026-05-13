@@ -328,6 +328,50 @@ export class AuditLogService {
     } as CreationAttributes<AuditLogErrorModel>);
   }
 
+  async bulkRegisterLog(
+    logType: AuditLogType,
+    entries: AuditLogDatabaseType[],
+  ) {
+    if (entries.length === 0) return;
+
+    try {
+      const userInformation = this.getUserInformation();
+      const now = new Date();
+
+      const logs = entries.map(() => ({
+        id: uuidv4(),
+        logType,
+        userId: userInformation.id,
+        ipAddress: userInformation.ip,
+        createdAt: now,
+      }));
+
+      await this.auditLogModel.bulkCreate(
+        logs as CreationAttributes<AuditLogModel>[],
+      );
+
+      const entityEntries = entries.map((entry, index) => ({
+        id: uuidv4(),
+        logId: logs[index].id,
+        action: entry.action,
+        entity: entry.entity,
+        changedValues: sanitizePayload(JSON.stringify(entry.changedValues)),
+        entityPk: entry.entityPk ? JSON.stringify(entry.entityPk) : null,
+        entityKey: entry.entityKey || null,
+        createdAt: now,
+      }));
+
+      await this.auditLogEntityModel.bulkCreate(
+        entityEntries as CreationAttributes<AuditLogEntityModel>[],
+      );
+    } catch (error) {
+      console.error(
+        `Error bulk registering audit logs (${logType}):`,
+        error,
+      );
+    }
+  }
+
   private async _logEntity(
     logId: string,
     {
