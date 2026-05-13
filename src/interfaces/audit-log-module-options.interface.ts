@@ -31,6 +31,12 @@ export type AuditLogRequestAuthRoute = {
   system: string;
 };
 
+export interface AuditLogBufferConfig {
+  bufferSize: number;
+  flushIntervalMs: number;
+  maxBufferSize: number;
+}
+
 export interface AuditLogModuleOptions {
   logRetentionDays: number;
   cleaningCronSchedule: string;
@@ -41,4 +47,6 @@ export interface AuditLogModuleOptions {
   enableIntegrationLogging?: boolean;
   auditedTables?: Array<string>;
   enableArchive?: false | AuditLogArchiveConfig;
+  enableBuffer?: boolean;
+  bufferConfig?: Partial<AuditLogBufferConfig>;
 }

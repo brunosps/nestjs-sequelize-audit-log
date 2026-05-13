@@ -28,6 +28,7 @@ import { compressPayload } from '../../utils/compressPayload';
 import { extractClientIp } from '../../utils/ip';
 import { sanitizePayload } from '../../utils/sanitizePayload';
 
+import { AuditLogBufferService, BufferEntry } from './audit-log-buffer.service';
 import { PayloadDetailsService } from './payload-details.service';
 
 type AuditLogType =
@@ -84,6 +85,14 @@ export class AuditLogService {
     @Optional()
     @Inject('GET_IPADDRESS_FUNCTION')
     private getIpAddressFn?: AuditLogGetInfoFromRequest,
+
+    @Optional()
+    @Inject('AUDIT_LOG_BUFFER_SERVICE')
+    private readonly bufferService?: AuditLogBufferService,
+
+    @Optional()
+    @Inject('ENABLE_BUFFER')
+    private readonly bufferEnabled?: boolean,
   ) {}
 
   private static readonly asyncLocalStorage =
@@ -194,6 +203,47 @@ export class AuditLogService {
   }
 
   async registerLog(logType: AuditLogType, data: AuditLogDataType) {
+    if (this.bufferService && this.bufferEnabled) {
+      const userInformation = this.getUserInformation();
+      this.bufferService.add({
+        logType,
+        data,
+        userInfo: userInformation,
+        timestamp: new Date(),
+      });
+      return;
+    }
+
+    await this._directRegisterLog(logType, data);
+  }
+
+  async flushEntries(entries: BufferEntry[]): Promise<void> {
+    const entityEntries = entries.filter((e) => e.logType === 'ENTITY');
+    const otherEntries = entries.filter((e) => e.logType !== 'ENTITY');
+
+    if (entityEntries.length > 0) {
+      await this.bulkRegisterLog(
+        'ENTITY',
+        entityEntries.map((e) => e.data as AuditLogDatabaseType),
+      );
+    }
+
+    for (const entry of otherEntries) {
+      try {
+        await this._directRegisterLog(
+          entry.logType as AuditLogType,
+          entry.data,
+        );
+      } catch (error) {
+        console.error(
+          `Error flushing audit log entry (${entry.logType}):`,
+          error,
+        );
+      }
+    }
+  }
+
+  async _directRegisterLog(logType: AuditLogType, data: AuditLogDataType) {
     try {
       const userInformation = this.getUserInformation();
 

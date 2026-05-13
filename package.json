@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "fs-extra": "^11.3.0",
+    "node-cache": "^5.1.2",
     "sequelize": "^6.35.1",
     "sequelize-typescript": "^2.1.5",
     "soap": "^1.1.11",

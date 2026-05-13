@@ -78,6 +78,8 @@ export class AuditLogModule {
           getIpAddress: options.getIpAddress,
           getUserId: options.getUserId,
           logRetentionDays: options.logRetentionDays,
+          enableBuffer: options.enableBuffer,
+          bufferConfig: options.bufferConfig,
         }),
         AuditLogEventModule.register(),
         ...imports,
