@@ -9,7 +9,7 @@ export class AuditLogArchiveService {
   private readonly logger = new Logger(AuditLogArchiveService.name);
   private models: (typeof Model)[];
   private archiveModels: (typeof Model)[];
-  private archivedRecords: Map<string, { model: typeof Model; ids: any[] }> =
+  private archivedRecords: Map<string, { model: typeof Model; count: number }> =
     new Map();
   private archiveSuccess: Map<string, boolean> = new Map();
 
@@ -77,7 +77,6 @@ export class AuditLogArchiveService {
   ): Promise<void> {
     const tableName = model.tableName;
     const primaryKey = model.primaryKeyAttribute;
-    const allIds: any[] = [];
 
     if (tableName !== 'audit_logs') {
       this.logger.log(
@@ -103,7 +102,7 @@ export class AuditLogArchiveService {
         `📊 Processing batch with cursor after ${lastCreatedAt || 'start'} for ${tableName}`,
       );
 
-      let records: Record<string, any>[] = [];
+      let currentBatchRecords: Record<string, any>[] = [];
 
       try {
         const whereCondition: any = {
@@ -118,7 +117,7 @@ export class AuditLogArchiveService {
           };
         }
 
-        const records: Record<string, any>[] = await (
+        currentBatchRecords = await (
           model as ModelCtor<Model<any, any>>
         ).findAll({
           where: whereCondition,
@@ -127,7 +126,7 @@ export class AuditLogArchiveService {
           raw: true,
         });
 
-        if (records.length === 0) {
+        if (currentBatchRecords.length === 0) {
           hasMoreRecords = false;
           this.logger.log(
             `✅ No more records found for ${tableName}. Total processed: ${totalProcessed}`,
@@ -136,16 +135,16 @@ export class AuditLogArchiveService {
         }
 
         this.logger.log(
-          `📝 Found ${records.length} records in current batch for ${tableName}`,
+          `📝 Found ${currentBatchRecords.length} records in current batch for ${tableName}`,
         );
 
         const existingIds = await this.getExistingIdsInArchiveBatched(
           archiveModel,
           primaryKey,
-          records.map((r) => r[primaryKey]),
+          currentBatchRecords.map((r) => r[primaryKey]),
         );
 
-        const recordsToArchive = records.filter(
+        const recordsToArchive = currentBatchRecords.filter(
           (record) => !existingIds.has(record[primaryKey]),
         );
 
@@ -170,26 +169,25 @@ export class AuditLogArchiveService {
           }
 
           this.logger.log(
-            `✅ Archived ${recordsToArchive.length} new records from ${tableName}. ${records.length - recordsToArchive.length} already existed.`,
+            `✅ Archived ${recordsToArchive.length} new records from ${tableName}. ${currentBatchRecords.length - recordsToArchive.length} already existed.`,
           );
         } else {
           this.logger.log(
-            `ℹ️ All ${records.length} records from current batch already existed in archive.`,
+            `ℹ️ All ${currentBatchRecords.length} records from current batch already existed in archive.`,
           );
         }
 
-        const parentIdsToDelete = records.map((r: any) => r[primaryKey]);
-        allIds.push(...parentIdsToDelete);
+        const parentIdsToDelete = currentBatchRecords.map((r: any) => r[primaryKey]);
 
-        totalProcessed += records.length;
+        totalProcessed += currentBatchRecords.length;
 
         await this.processChildTablesForBatch(parentIdsToDelete);
 
         await this.deleteRecordsForBatch(parentIdsToDelete);
 
-        lastCreatedAt = new Date(records[records.length - 1].createdAt);
+        lastCreatedAt = new Date(currentBatchRecords[currentBatchRecords.length - 1].createdAt);
 
-        if (records.length < batchSize) {
+        if (currentBatchRecords.length < batchSize) {
           hasMoreRecords = false;
         }
 
@@ -201,29 +199,25 @@ export class AuditLogArchiveService {
           `❌ Error in cursor-based processing for table ${tableName}:`,
         );
 
-        // Se for erro de constraint única, tentar continuar com próximo lote
         if (error.name === 'SequelizeUniqueConstraintError') {
           this.logger.warn(
             `⚠️ Unique constraint error detected, continuing with next batch...`,
           );
 
-          // Atualizar cursor mesmo com erro para evitar loop infinito
-          if (records && records.length > 0) {
-            lastCreatedAt = new Date(records[records.length - 1].createdAt);
-            totalProcessed += records.length;
+          if (currentBatchRecords.length > 0) {
+            lastCreatedAt = new Date(currentBatchRecords[currentBatchRecords.length - 1].createdAt);
+            totalProcessed += currentBatchRecords.length;
 
-            // Se retornamos menos registros que o batchSize, chegamos ao fim
-            if (records.length < batchSize) {
+            if (currentBatchRecords.length < batchSize) {
               hasMoreRecords = false;
             }
           } else {
             hasMoreRecords = false;
           }
 
-          continue; // Continua para próxima iteração
+          continue;
         }
 
-        // Para outros tipos de erro, interromper o processamento
         this.logger.error(error);
         this.archiveSuccess.set(tableName, false);
         return;
@@ -240,10 +234,10 @@ export class AuditLogArchiveService {
       `🎉 Completed processing ${totalProcessed} total records for ${tableName}`,
     );
 
-    this.archivedRecords.set(tableName, { model, ids: allIds });
+    this.archivedRecords.set(tableName, { model, count: totalProcessed });
     this.archiveSuccess.set(tableName, true);
     this.logger.log(
-      `Successfully processed ${tableName}. Total IDs for deletion: ${allIds.length}`,
+      `Successfully processed ${tableName}. Total records: ${totalProcessed}`,
     );
   }
 
