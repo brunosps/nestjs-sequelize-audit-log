@@ -41,9 +41,11 @@ export class AuditLogArchiveTask {
     this.isRunning = true;
     this.logger.log('Starting scheduled audit log archiving...');
 
+    const work = this.archiveService.execute();
+
     try {
       await Promise.race([
-        this.archiveService.execute(),
+        work,
         new Promise<void>((_, reject) =>
           setTimeout(
             () => reject(new Error('Archive timeout exceeded')),
@@ -54,8 +56,10 @@ export class AuditLogArchiveTask {
       this.logger.log('Scheduled audit log archiving completed.');
     } catch (error) {
       this.logger.error('Archive task error:', error);
-    } finally {
-      this.isRunning = false;
     }
+
+    // Keep mutex locked until the actual work finishes
+    await work.catch(() => {});
+    this.isRunning = false;
   };
 }

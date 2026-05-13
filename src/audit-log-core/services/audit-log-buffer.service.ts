@@ -26,18 +26,25 @@ export class AuditLogBufferService implements OnModuleDestroy {
   }
 
   add(entry: BufferEntry): void {
-    this.entries.push(entry);
-
-    if (this.entries.length >= this.config.maxBufferSize * 0.8) {
-      this.logger.warn(
-        `Buffer at ${Math.round((this.entries.length / this.config.maxBufferSize) * 100)}% capacity (${this.entries.length}/${this.config.maxBufferSize})`,
+    if (this.entries.length >= this.config.maxBufferSize && this.isFlushing) {
+      this.logger.error(
+        `Buffer overflow — dropping entry (flushing in progress, ${this.entries.length}/${this.config.maxBufferSize})`,
       );
+      return;
     }
+
+    this.entries.push(entry);
 
     if (this.entries.length >= this.config.maxBufferSize) {
       this.logger.warn('Buffer full — forcing immediate flush');
       this.flush();
       return;
+    }
+
+    if (this.entries.length >= this.config.maxBufferSize * 0.8) {
+      this.logger.warn(
+        `Buffer at ${Math.round((this.entries.length / this.config.maxBufferSize) * 100)}% capacity (${this.entries.length}/${this.config.maxBufferSize})`,
+      );
     }
 
     if (this.entries.length >= this.config.bufferSize) {
@@ -53,7 +60,7 @@ export class AuditLogBufferService implements OnModuleDestroy {
     try {
       await this.flushCallback(batch);
     } catch (error) {
-      console.error('Error flushing audit log buffer:', error);
+      this.logger.error('Error flushing audit log buffer:', error);
     } finally {
       this.isFlushing = false;
     }

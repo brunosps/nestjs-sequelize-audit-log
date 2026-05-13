@@ -1,10 +1,12 @@
 import {
   DynamicModule,
   Global,
+  Inject,
   Logger,
   MiddlewareConsumer,
   Module,
   OnModuleDestroy,
+  Optional,
 } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
 
@@ -56,8 +58,21 @@ const AUDIT_MODELS = [
 
 @Global()
 @Module({})
-export class AuditLogCoreModule {
+export class AuditLogCoreModule implements OnModuleDestroy {
   private static readonly logger = new Logger(AuditLogCoreModule.name);
+
+  constructor(
+    @Optional()
+    @Inject('AUDIT_SEQUELIZE')
+    private readonly auditSequelize?: Sequelize | null,
+  ) {}
+
+  async onModuleDestroy() {
+    if (this.auditSequelize) {
+      await this.auditSequelize.close();
+      AuditLogCoreModule.logger.log('Audit log dedicated pool closed');
+    }
+  }
 
   static register(config: AuditCoreModuleOptions): DynamicModule {
     const providers: any[] = [

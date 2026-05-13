@@ -81,20 +81,20 @@ describe('AuditLogBufferService', () => {
     });
 
     it('deve perder entries e logar erro quando flushCallback falha', async () => {
-      const consoleSpy = jest
-        .spyOn(console, 'error')
+      const errorSpy = jest
+        .spyOn((service as any).logger, 'error')
         .mockImplementation(() => {});
       flushCallback.mockRejectedValueOnce(new Error('DB error'));
 
       service.add(createEntry());
       await service.flush();
 
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(errorSpy).toHaveBeenCalledWith(
         'Error flushing audit log buffer:',
         expect.any(Error),
       );
       expect(service.getBufferSize()).toBe(0);
-      consoleSpy.mockRestore();
+      errorSpy.mockRestore();
     });
 
     it('deve proteger contra reentrada com isFlushing', async () => {

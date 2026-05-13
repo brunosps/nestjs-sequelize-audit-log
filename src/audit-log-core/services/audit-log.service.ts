@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { AsyncLocalStorage } from 'async_hooks';
 import { CreationAttributes, Op } from 'sequelize';
@@ -48,6 +48,8 @@ type AuditLogDataType =
 
 @Injectable()
 export class AuditLogService {
+  private readonly logger = new Logger(AuditLogService.name);
+
   constructor(
     @InjectModel(AuditLogModel)
     private readonly auditLogModel: typeof AuditLogModel,
@@ -225,6 +227,7 @@ export class AuditLogService {
       await this.bulkRegisterLog(
         'ENTITY',
         entityEntries.map((e) => e.data as AuditLogDatabaseType),
+        entityEntries.map((e) => e.userInfo),
       );
     }
 
@@ -233,9 +236,10 @@ export class AuditLogService {
         await this._directRegisterLog(
           entry.logType as AuditLogType,
           entry.data,
+          entry.userInfo,
         );
       } catch (error) {
-        console.error(
+        this.logger.error(
           `Error flushing audit log entry (${entry.logType}):`,
           error,
         );
@@ -243,9 +247,13 @@ export class AuditLogService {
     }
   }
 
-  async _directRegisterLog(logType: AuditLogType, data: AuditLogDataType) {
+  async _directRegisterLog(
+    logType: AuditLogType,
+    data: AuditLogDataType,
+    userInfoOverride?: { id: string; ip: string },
+  ) {
     try {
-      const userInformation = this.getUserInformation();
+      const userInformation = userInfoOverride || this.getUserInformation();
 
       const log = await this.auditLogModel.create({
         id: uuidv4(),
@@ -284,7 +292,7 @@ export class AuditLogService {
           break;
       }
     } catch (error) {
-      console.error(`Error registering audit log (${logType}):`, error);
+      this.logger.error(`Error registering audit log (${logType}):`, error);
     }
   }
   private async _logRequest(
@@ -381,18 +389,19 @@ export class AuditLogService {
   async bulkRegisterLog(
     logType: AuditLogType,
     entries: AuditLogDatabaseType[],
+    userInfoOverrides?: Array<{ id: string; ip: string }>,
   ) {
     if (entries.length === 0) return;
 
     try {
-      const userInformation = this.getUserInformation();
+      const defaultUserInfo = this.getUserInformation();
       const now = new Date();
 
-      const logs = entries.map(() => ({
+      const logs = entries.map((_, index) => ({
         id: uuidv4(),
         logType,
-        userId: userInformation.id,
-        ipAddress: userInformation.ip,
+        userId: userInfoOverrides?.[index]?.id || defaultUserInfo.id,
+        ipAddress: userInfoOverrides?.[index]?.ip || defaultUserInfo.ip,
         createdAt: now,
       }));
 
@@ -415,7 +424,7 @@ export class AuditLogService {
         entityEntries as CreationAttributes<AuditLogEntityModel>[],
       );
     } catch (error) {
-      console.error(
+      this.logger.error(
         `Error bulk registering audit logs (${logType}):`,
         error,
       );

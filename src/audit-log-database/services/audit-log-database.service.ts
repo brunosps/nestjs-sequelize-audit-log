@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize';
 
@@ -15,6 +15,8 @@ export interface AuditLogDatabaseType {
 
 @Injectable()
 export class AuditLogDatabaseService implements OnModuleInit {
+  private readonly logger = new Logger(AuditLogDatabaseService.name);
+
   constructor(
     @InjectConnection()
     private readonly sequelize: Sequelize,
@@ -45,7 +47,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
             tableName: options.model.tableName,
           };
         } catch (error) {
-          console.error('Error capturing before bulk update:', error);
+          this.logger.error('Error capturing before bulk update:', error);
         }
       }
     });
@@ -97,7 +99,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
 
           this.bulkRegisterLog(auditEntries);
         } catch (error) {
-          console.error('Error processing individual bulk updates:', error);
+          this.logger.error('Error processing individual bulk updates:', error);
         }
       }
     });
@@ -140,7 +142,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
             }
             this.bulkRegisterLog(auditEntries);
           } catch (error) {
-            console.error('Error processing individual bulk creates:', error);
+            this.logger.error('Error processing individual bulk creates:', error);
           }
         }
       },
@@ -197,7 +199,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
             tableName: options.model.tableName,
           };
         } catch (error) {
-          console.error('Error capturing before bulk delete:', error);
+          this.logger.error('Error capturing before bulk delete:', error);
         }
       }
     });
@@ -228,7 +230,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
           }
           this.bulkRegisterLog(auditEntries);
         } catch (error) {
-          console.error('Error processing individual bulk deletes:', error);
+          this.logger.error('Error processing individual bulk deletes:', error);
         }
       }
     });
@@ -239,7 +241,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
     try {
       this.auditLogService.bulkRegisterLog('ENTITY', entries);
     } catch (error) {
-      console.error('Error bulk logging entity changes:', error);
+      this.logger.error('Error bulk logging entity changes:', error);
     }
   }
 
@@ -329,7 +331,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
         entityKey,
       });
     } catch (error) {
-      console.error('Error logging entity change:', error);
+      this.logger.error('Error logging entity change:', error);
     }
   }
 
@@ -366,7 +368,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
         entityKey,
       };
     } catch (error) {
-      console.error('Error extracting primary key info:', error);
+      this.logger.error('Error extracting primary key info:', error);
       return {
         entityPk: {},
         entityKey: '',
@@ -403,7 +405,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
 
       return String(value);
     } catch (error) {
-      console.error(`Error formatting PK value for field ${fieldName}:`, error);
+      this.logger.error(`Error formatting PK value for field ${fieldName}:`, error);
       return String(value);
     }
   }

@@ -69,24 +69,34 @@ describe('AuditLogArchiveTask', () => {
   });
 
   describe('timeout', () => {
-    it('deve rejeitar com timeout quando archive demora demais', async () => {
+    it('deve rejeitar com timeout e manter mutex até work terminar', async () => {
       jest.useFakeTimers();
       const errorSpy = jest.spyOn((task as any).logger, 'error');
 
+      let resolveWork: () => void;
       mockArchiveService.execute.mockReturnValue(
-        new Promise(() => {}), // never resolves
+        new Promise<void>((resolve) => {
+          resolveWork = resolve;
+        }),
       );
 
       const handling = task.handleArchiving();
 
-      jest.advanceTimersByTime(30 * 60 * 1000 + 1000);
-
-      await handling;
+      await jest.advanceTimersByTimeAsync(30 * 60 * 1000 + 1000);
 
       expect(errorSpy).toHaveBeenCalledWith(
         'Archive task error:',
         expect.objectContaining({ message: 'Archive timeout exceeded' }),
       );
+
+      // Mutex stays locked since work hasn't finished
+      expect((task as any).isRunning).toBe(true);
+
+      // Resolve the actual work
+      resolveWork!();
+      await handling;
+
+      // Mutex released after work completes
       expect((task as any).isRunning).toBe(false);
 
       jest.useRealTimers();
