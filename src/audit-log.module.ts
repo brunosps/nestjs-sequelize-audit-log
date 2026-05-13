@@ -80,6 +80,7 @@ export class AuditLogModule {
           logRetentionDays: options.logRetentionDays,
           enableBuffer: options.enableBuffer,
           bufferConfig: options.bufferConfig,
+          auditSequelize: options.auditSequelize,
         }),
         AuditLogEventModule.register(),
         ...imports,

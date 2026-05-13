@@ -264,9 +264,10 @@ export class AuditLogArchiveService {
       `🔄 Processing ${childTables.length} child tables for batch of ${parentIds.length} parent IDs`,
     );
 
-    for (const tableName of childTables) {
-      try {
-        this.logger.log(`📊 Processing child table: ${tableName}`);
+    await Promise.all(
+      childTables.map(async (tableName) => {
+        try {
+          this.logger.log(`📊 Processing child table: ${tableName}`);
 
         const model = this.getModelByTableName(this.models, tableName);
         const archiveModel = this.getModelByTableName(
@@ -352,7 +353,8 @@ export class AuditLogArchiveService {
           error,
         );
       }
-    }
+      }),
+    );
 
     this.logger.log(
       `✅ Completed processing all child tables for current batch`,

@@ -28,4 +28,5 @@ export {
 export type {
   AuditLogModuleOptions,
   AuditLogBufferConfig,
+  AuditLogSequelizeConfig,
 } from './interfaces/audit-log-module-options.interface';
