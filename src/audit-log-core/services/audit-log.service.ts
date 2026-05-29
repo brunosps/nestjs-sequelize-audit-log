@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { AsyncLocalStorage } from 'async_hooks';
 import { CreationAttributes, Op } from 'sequelize';
@@ -28,6 +28,7 @@ import { compressPayload } from '../../utils/compressPayload';
 import { extractClientIp } from '../../utils/ip';
 import { sanitizePayload } from '../../utils/sanitizePayload';
 
+import { AuditLogBufferService, BufferEntry } from './audit-log-buffer.service';
 import { PayloadDetailsService } from './payload-details.service';
 
 type AuditLogType =
@@ -47,6 +48,8 @@ type AuditLogDataType =
 
 @Injectable()
 export class AuditLogService {
+  private readonly logger = new Logger(AuditLogService.name);
+
   constructor(
     @InjectModel(AuditLogModel)
     private readonly auditLogModel: typeof AuditLogModel,
@@ -84,6 +87,14 @@ export class AuditLogService {
     @Optional()
     @Inject('GET_IPADDRESS_FUNCTION')
     private getIpAddressFn?: AuditLogGetInfoFromRequest,
+
+    @Optional()
+    @Inject('AUDIT_LOG_BUFFER_SERVICE')
+    private readonly bufferService?: AuditLogBufferService,
+
+    @Optional()
+    @Inject('ENABLE_BUFFER')
+    private readonly bufferEnabled?: boolean,
   ) {}
 
   private static readonly asyncLocalStorage =
@@ -194,8 +205,55 @@ export class AuditLogService {
   }
 
   async registerLog(logType: AuditLogType, data: AuditLogDataType) {
-    try {
+    if (this.bufferService && this.bufferEnabled) {
       const userInformation = this.getUserInformation();
+      this.bufferService.add({
+        logType,
+        data,
+        userInfo: userInformation,
+        timestamp: new Date(),
+      });
+      return;
+    }
+
+    await this._directRegisterLog(logType, data);
+  }
+
+  async flushEntries(entries: BufferEntry[]): Promise<void> {
+    const entityEntries = entries.filter((e) => e.logType === 'ENTITY');
+    const otherEntries = entries.filter((e) => e.logType !== 'ENTITY');
+
+    if (entityEntries.length > 0) {
+      await this.bulkRegisterLog(
+        'ENTITY',
+        entityEntries.map((e) => e.data as AuditLogDatabaseType),
+        entityEntries.map((e) => e.userInfo),
+      );
+    }
+
+    for (const entry of otherEntries) {
+      try {
+        await this._directRegisterLog(
+          entry.logType as AuditLogType,
+          entry.data,
+          entry.userInfo,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Error flushing audit log entry (${entry.logType}):`,
+          error,
+        );
+      }
+    }
+  }
+
+  async _directRegisterLog(
+    logType: AuditLogType,
+    data: AuditLogDataType,
+    userInfoOverride?: { id: string; ip: string },
+  ) {
+    try {
+      const userInformation = userInfoOverride || this.getUserInformation();
 
       const log = await this.auditLogModel.create({
         id: uuidv4(),
@@ -234,7 +292,7 @@ export class AuditLogService {
           break;
       }
     } catch (error) {
-      console.error(`Error registering audit log (${logType}):`, error);
+      this.logger.error(`Error registering audit log (${logType}):`, error);
     }
   }
   private async _logRequest(
@@ -326,6 +384,51 @@ export class AuditLogService {
       requestMethod: routeMethod,
       createdAt: new Date(),
     } as CreationAttributes<AuditLogErrorModel>);
+  }
+
+  async bulkRegisterLog(
+    logType: AuditLogType,
+    entries: AuditLogDatabaseType[],
+    userInfoOverrides?: Array<{ id: string; ip: string }>,
+  ) {
+    if (entries.length === 0) return;
+
+    try {
+      const defaultUserInfo = this.getUserInformation();
+      const now = new Date();
+
+      const logs = entries.map((_, index) => ({
+        id: uuidv4(),
+        logType,
+        userId: userInfoOverrides?.[index]?.id || defaultUserInfo.id,
+        ipAddress: userInfoOverrides?.[index]?.ip || defaultUserInfo.ip,
+        createdAt: now,
+      }));
+
+      await this.auditLogModel.bulkCreate(
+        logs as CreationAttributes<AuditLogModel>[],
+      );
+
+      const entityEntries = entries.map((entry, index) => ({
+        id: uuidv4(),
+        logId: logs[index].id,
+        action: entry.action,
+        entity: entry.entity,
+        changedValues: sanitizePayload(JSON.stringify(entry.changedValues)),
+        entityPk: entry.entityPk ? JSON.stringify(entry.entityPk) : null,
+        entityKey: entry.entityKey || null,
+        createdAt: now,
+      }));
+
+      await this.auditLogEntityModel.bulkCreate(
+        entityEntries as CreationAttributes<AuditLogEntityModel>[],
+      );
+    } catch (error) {
+      this.logger.error(
+        `Error bulk registering audit logs (${logType}):`,
+        error,
+      );
+    }
   }
 
   private async _logEntity(

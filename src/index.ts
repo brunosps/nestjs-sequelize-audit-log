@@ -25,4 +25,8 @@ export {
 } from './utils/compressPayload';
 
 // Interface exports
-export type { AuditLogModuleOptions } from './interfaces/audit-log-module-options.interface';
+export type {
+  AuditLogModuleOptions,
+  AuditLogBufferConfig,
+  AuditLogSequelizeConfig,
+} from './interfaces/audit-log-module-options.interface';

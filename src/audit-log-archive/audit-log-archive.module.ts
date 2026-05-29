@@ -65,7 +65,7 @@ export class AuditLogArchiveModule {
   }
 
   static register(config: AuditLogArchiveConfig): DynamicModule {
-    const providers = [
+    const providers: any[] = [
       {
         provide: 'ARCHIVE_CRON_SCHEDULE',
         useValue: config.archiveCronSchedule,
@@ -111,7 +111,13 @@ export class AuditLogArchiveModule {
       },
       {
         provide: 'MAIN_SEQUELIZE',
-        useExisting: Sequelize,
+        useFactory: (mainSequelize: Sequelize, auditSequelize?: Sequelize) => {
+          return auditSequelize || mainSequelize;
+        },
+        inject: [
+          Sequelize,
+          { token: 'AUDIT_SEQUELIZE', optional: true },
+        ],
       },
       AuditLogArchiveService,
       AuditLogArchiveTask,

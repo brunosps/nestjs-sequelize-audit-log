@@ -31,6 +31,23 @@ export type AuditLogRequestAuthRoute = {
   system: string;
 };
 
+export interface AuditLogSequelizeConfig {
+  dialect: string;
+  host: string;
+  port?: number;
+  database: string;
+  username?: string;
+  password?: string;
+  pool?: { max: number; min: number; idle: number; acquire: number };
+  dialectOptions?: any;
+}
+
+export interface AuditLogBufferConfig {
+  bufferSize: number;
+  flushIntervalMs: number;
+  maxBufferSize: number;
+}
+
 export interface AuditLogModuleOptions {
   logRetentionDays: number;
   cleaningCronSchedule: string;
@@ -41,4 +58,7 @@ export interface AuditLogModuleOptions {
   enableIntegrationLogging?: boolean;
   auditedTables?: Array<string>;
   enableArchive?: false | AuditLogArchiveConfig;
+  enableBuffer?: boolean;
+  bufferConfig?: Partial<AuditLogBufferConfig>;
+  auditSequelize?: AuditLogSequelizeConfig;
 }

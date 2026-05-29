@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize';
 
@@ -15,6 +15,8 @@ export interface AuditLogDatabaseType {
 
 @Injectable()
 export class AuditLogDatabaseService implements OnModuleInit {
+  private readonly logger = new Logger(AuditLogDatabaseService.name);
+
   constructor(
     @InjectConnection()
     private readonly sequelize: Sequelize,
@@ -45,7 +47,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
             tableName: options.model.tableName,
           };
         } catch (error) {
-          console.error('Error capturing before bulk update:', error);
+          this.logger.error('Error capturing before bulk update:', error);
         }
       }
     });
@@ -65,33 +67,39 @@ export class AuditLogDatabaseService implements OnModuleInit {
             raw: true,
           });
 
+          const primaryKeys = this.getModelPrimaryKeys(options.model);
+          const buildKey = (record: any) =>
+            primaryKeys.map((pk) => String(record[pk])).join('|');
+          const afterMap = new Map(
+            recordsAfterUpdate.map((r: any) => [buildKey(r), r]),
+          );
+
+          const auditEntries: AuditLogDatabaseType[] = [];
+
           for (const beforeRecord of recordsBeforeUpdate) {
-            const afterRecord = recordsAfterUpdate.find(
-              (record: Record<string, any>) =>
-                this.isSameRecord(beforeRecord, record, options.model),
-            );
+            const afterRecord = afterMap.get(buildKey(beforeRecord));
+            if (!afterRecord) continue;
 
-            if (afterRecord) {
-              const changes = this.getChangedFields(beforeRecord, afterRecord);
+            const changes = this.getChangedFields(beforeRecord, afterRecord);
+            if (Object.keys(changes).length === 0) continue;
 
-              if (Object.keys(changes).length > 0) {
-                const mockInstance = {
-                  dataValues: afterRecord,
-                  constructor: options.model,
-                };
-                const pkInfo = this.extractPrimaryKeyInfo(mockInstance);
-                await this.registerLog(
-                  'UPDATE',
-                  tableName,
-                  changes,
-                  pkInfo.entityPk,
-                  pkInfo.entityKey,
-                );
-              }
-            }
+            const mockInstance = {
+              dataValues: afterRecord,
+              constructor: options.model,
+            };
+            const pkInfo = this.extractPrimaryKeyInfo(mockInstance);
+            auditEntries.push({
+              action: 'UPDATE',
+              entity: tableName,
+              changedValues: changes,
+              entityPk: pkInfo.entityPk,
+              entityKey: pkInfo.entityKey,
+            });
           }
+
+          this.bulkRegisterLog(auditEntries);
         } catch (error) {
-          console.error('Error processing individual bulk updates:', error);
+          this.logger.error('Error processing individual bulk updates:', error);
         }
       }
     });
@@ -121,18 +129,20 @@ export class AuditLogDatabaseService implements OnModuleInit {
         ) {
           const tableName = instances[0].constructor.tableName;
           try {
+            const auditEntries: AuditLogDatabaseType[] = [];
             for (const instance of instances) {
               const pkInfo = this.extractPrimaryKeyInfo(instance);
-              await this.registerLog(
-                'CREATE',
-                tableName,
-                instance.dataValues,
-                pkInfo.entityPk,
-                pkInfo.entityKey,
-              );
+              auditEntries.push({
+                action: 'CREATE',
+                entity: tableName,
+                changedValues: instance.dataValues,
+                entityPk: pkInfo.entityPk,
+                entityKey: pkInfo.entityKey,
+              });
             }
+            this.bulkRegisterLog(auditEntries);
           } catch (error) {
-            console.error('Error processing individual bulk creates:', error);
+            this.logger.error('Error processing individual bulk creates:', error);
           }
         }
       },
@@ -189,7 +199,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
             tableName: options.model.tableName,
           };
         } catch (error) {
-          console.error('Error capturing before bulk delete:', error);
+          this.logger.error('Error capturing before bulk delete:', error);
         }
       }
     });
@@ -203,25 +213,36 @@ export class AuditLogDatabaseService implements OnModuleInit {
           options.auditBulkDeleteContext;
 
         try {
+          const auditEntries: AuditLogDatabaseType[] = [];
           for (const deletedRecord of recordsBeforeDelete) {
             const mockInstance = {
               dataValues: deletedRecord,
               constructor: options.model,
             };
             const pkInfo = this.extractPrimaryKeyInfo(mockInstance);
-            await this.registerLog(
-              'DELETE',
-              tableName,
-              deletedRecord,
-              pkInfo.entityPk,
-              pkInfo.entityKey,
-            );
+            auditEntries.push({
+              action: 'DELETE',
+              entity: tableName,
+              changedValues: deletedRecord,
+              entityPk: pkInfo.entityPk,
+              entityKey: pkInfo.entityKey,
+            });
           }
+          this.bulkRegisterLog(auditEntries);
         } catch (error) {
-          console.error('Error processing individual bulk deletes:', error);
+          this.logger.error('Error processing individual bulk deletes:', error);
         }
       }
     });
+  }
+
+  private bulkRegisterLog(entries: AuditLogDatabaseType[]) {
+    if (entries.length === 0) return;
+    try {
+      this.auditLogService.bulkRegisterLog('ENTITY', entries);
+    } catch (error) {
+      this.logger.error('Error bulk logging entity changes:', error);
+    }
   }
 
   private shouldAuditTable(tableName: string): boolean {
@@ -310,7 +331,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
         entityKey,
       });
     } catch (error) {
-      console.error('Error logging entity change:', error);
+      this.logger.error('Error logging entity change:', error);
     }
   }
 
@@ -347,7 +368,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
         entityKey,
       };
     } catch (error) {
-      console.error('Error extracting primary key info:', error);
+      this.logger.error('Error extracting primary key info:', error);
       return {
         entityPk: {},
         entityKey: '',
@@ -384,7 +405,7 @@ export class AuditLogDatabaseService implements OnModuleInit {
 
       return String(value);
     } catch (error) {
-      console.error(`Error formatting PK value for field ${fieldName}:`, error);
+      this.logger.error(`Error formatting PK value for field ${fieldName}:`, error);
       return String(value);
     }
   }

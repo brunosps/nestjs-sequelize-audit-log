@@ -257,16 +257,16 @@ describe('AuditLogService', () => {
     });
 
     it('should handle errors gracefully', async () => {
-      const consoleError = jest.spyOn(console, 'error').mockImplementation();
+      const loggerError = jest.spyOn((service as any).logger, 'error').mockImplementation();
       auditLogModel.create.mockRejectedValueOnce(new Error('DB error'));
 
       await service.registerLog('EVENT', { type: 'FAIL', description: 'fail' });
 
-      expect(consoleError).toHaveBeenCalledWith(
+      expect(loggerError).toHaveBeenCalledWith(
         expect.stringContaining('Error registering audit log'),
         expect.any(Error),
       );
-      consoleError.mockRestore();
+      loggerError.mockRestore();
     });
 
     it('should handle integration with object payloads', async () => {
