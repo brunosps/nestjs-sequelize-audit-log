@@ -1,4 +1,4 @@
-import { DynamicModule, Logger, Module } from '@nestjs/common';
+import { DynamicModule, Module } from '@nestjs/common';
 
 import { AuditLogArchiveModule } from './audit-log-archive/audit-log-archive.module';
 import { AuditLogCoreModule } from './audit-log-core/audit-log-core.module';
@@ -23,15 +23,19 @@ export class AuditLogModule {
     const exports = [];
     const providers = [];
     const auditedTables = options.auditedTables ?? [];
+    const archiveConfig = options.enableArchive
+      ? {
+          ...options.enableArchive,
+          archiveCutoffDays:
+            options.enableArchive.archiveCutoffDays ?? options.logRetentionDays,
+        }
+      : false;
 
     if (
-      options.enableArchive &&
-      (await AuditLogArchiveModule.testSequelizeConnection({
-        ...options.enableArchive,
-        archiveCutoffDays: options.logRetentionDays,
-      }))
+      archiveConfig &&
+      (await AuditLogArchiveModule.testSequelizeConnection(archiveConfig))
     ) {
-      imports.push(AuditLogArchiveModule.register(options.enableArchive));
+      imports.push(AuditLogArchiveModule.register(archiveConfig));
     } else {
       providers.push(AuditLogCleaningTask);
       providers.push({
@@ -85,7 +89,7 @@ export class AuditLogModule {
         AuditLogEventModule.register(),
         ...imports,
       ],
-      exports: [AuditLogEventModule, ...exports],
+      exports: [AuditLogCoreModule, AuditLogEventModule, ...exports],
       providers,
     };
   }

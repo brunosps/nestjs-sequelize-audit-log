@@ -26,7 +26,9 @@ describe('AuditLogService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     auditLogModel = {
-      create: jest.fn().mockResolvedValue({ id: 'log-1', save: mockSave, userId: 'system' }),
+      create: jest
+        .fn()
+        .mockResolvedValue({ id: 'log-1', save: mockSave, userId: 'system' }),
       destroy: jest.fn().mockResolvedValue(1),
     };
     auditLogEventModel = createMockModel();
@@ -82,35 +84,57 @@ describe('AuditLogService', () => {
     it('should use getUserIdFn when provided', () => {
       const getUserIdFn = jest.fn().mockReturnValue('custom-id');
       const svc = new AuditLogService(
-        auditLogModel, auditLogEventModel, auditLogEntityModel,
-        auditLogErrorModel, auditLogIntegrationModel, auditLogRequestModel,
-        auditLogLoginModel, auditLogDetailModel, payloadDetailsService, 30,
-        getUserIdFn, undefined,
+        auditLogModel,
+        auditLogEventModel,
+        auditLogEntityModel,
+        auditLogErrorModel,
+        auditLogIntegrationModel,
+        auditLogRequestModel,
+        auditLogLoginModel,
+        auditLogDetailModel,
+        payloadDetailsService,
+        30,
+        getUserIdFn,
+        undefined,
       );
 
       const req = { user: { id: '10' }, headers: {}, connection: {} } as any;
-      const result = AuditLogService.runWithRequest(req, () => svc.getUserInformation());
+      const result = AuditLogService.runWithRequest(req, () =>
+        svc.getUserInformation(),
+      );
       expect(result.id).toBe('custom-id');
     });
 
     it('should use getIpAddressFn when provided', () => {
       const getIpFn = jest.fn().mockReturnValue('99.99.99.99');
       const svc = new AuditLogService(
-        auditLogModel, auditLogEventModel, auditLogEntityModel,
-        auditLogErrorModel, auditLogIntegrationModel, auditLogRequestModel,
-        auditLogLoginModel, auditLogDetailModel, payloadDetailsService, 30,
-        undefined, getIpFn,
+        auditLogModel,
+        auditLogEventModel,
+        auditLogEntityModel,
+        auditLogErrorModel,
+        auditLogIntegrationModel,
+        auditLogRequestModel,
+        auditLogLoginModel,
+        auditLogDetailModel,
+        payloadDetailsService,
+        30,
+        undefined,
+        getIpFn,
       );
 
       const req = { user: { id: '10' }, headers: {}, connection: {} } as any;
-      const result = AuditLogService.runWithRequest(req, () => svc.getUserInformation());
+      const result = AuditLogService.runWithRequest(req, () =>
+        svc.getUserInformation(),
+      );
       expect(result.ip).toBe('99.99.99.99');
     });
   });
 
   describe('logEvent', () => {
     it('should call registerLog with EVENT type', async () => {
-      const spy = jest.spyOn(service, 'registerLog').mockResolvedValue(undefined);
+      const spy = jest
+        .spyOn(service, 'registerLog')
+        .mockResolvedValue(undefined);
       const data = { type: 'TEST', description: 'test' };
       await service.logEvent(data);
       expect(spy).toHaveBeenCalledWith('EVENT', data);
@@ -257,7 +281,9 @@ describe('AuditLogService', () => {
     });
 
     it('should handle errors gracefully', async () => {
-      const loggerError = jest.spyOn((service as any).logger, 'error').mockImplementation();
+      const loggerError = jest
+        .spyOn((service as any).logger, 'error')
+        .mockImplementation();
       auditLogModel.create.mockRejectedValueOnce(new Error('DB error'));
 
       await service.registerLog('EVENT', { type: 'FAIL', description: 'fail' });
@@ -280,6 +306,55 @@ describe('AuditLogService', () => {
       });
 
       expect(auditLogIntegrationModel.create).toHaveBeenCalled();
+    });
+
+    it('should use injected audit model set when provided', async () => {
+      const dedicatedAuditLogModel = {
+        ...auditLogModel,
+        create: jest.fn().mockResolvedValue({ id: 'dedicated-log' }),
+      };
+      const dedicatedAuditLogEventModel = {
+        ...auditLogEventModel,
+        create: jest.fn().mockResolvedValue({}),
+      };
+
+      const svc = new AuditLogService(
+        auditLogModel,
+        auditLogEventModel,
+        auditLogEntityModel,
+        auditLogErrorModel,
+        auditLogIntegrationModel,
+        auditLogRequestModel,
+        auditLogLoginModel,
+        auditLogDetailModel,
+        payloadDetailsService,
+        30,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        {
+          auditLogModel: dedicatedAuditLogModel,
+          auditLogEventModel: dedicatedAuditLogEventModel,
+          auditLogEntityModel,
+          auditLogErrorModel,
+          auditLogIntegrationModel,
+          auditLogRequestModel,
+          auditLogLoginModel,
+          auditLogDetailModel,
+        } as any,
+      );
+
+      await svc.registerLog('EVENT', {
+        type: 'DEDICATED',
+        description: 'uses dedicated pool',
+      });
+
+      expect(dedicatedAuditLogModel.create).toHaveBeenCalled();
+      expect(dedicatedAuditLogEventModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ logId: 'dedicated-log' }),
+      );
+      expect(auditLogModel.create).not.toHaveBeenCalled();
     });
   });
 

@@ -7,6 +7,7 @@ export type BufferEntry = {
   data: any;
   userInfo: { id: string; ip: string };
   timestamp: Date;
+  retryCount?: number;
 };
 
 @Injectable()
@@ -15,18 +16,25 @@ export class AuditLogBufferService implements OnModuleDestroy {
   private readonly entries: BufferEntry[] = [];
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private isFlushing = false;
+  private activeFlush: Promise<void> | null = null;
+  private droppedEntries = 0;
 
   constructor(
     @Inject('BUFFER_CONFIG')
     private readonly config: AuditLogBufferConfig,
-    @Inject('FLUSH_CALLBACK')
-    private readonly flushCallback: (entries: BufferEntry[]) => Promise<void>,
   ) {
     this.startFlushTimer();
   }
 
+  private flushCallback?: (entries: BufferEntry[]) => Promise<void>;
+
+  setFlushCallback(callback: (entries: BufferEntry[]) => Promise<void>): void {
+    this.flushCallback = callback;
+  }
+
   add(entry: BufferEntry): void {
     if (this.entries.length >= this.config.maxBufferSize && this.isFlushing) {
+      this.droppedEntries += 1;
       this.logger.error(
         `Buffer overflow — dropping entry (flushing in progress, ${this.entries.length}/${this.config.maxBufferSize})`,
       );
@@ -37,7 +45,7 @@ export class AuditLogBufferService implements OnModuleDestroy {
 
     if (this.entries.length >= this.config.maxBufferSize) {
       this.logger.warn('Buffer full — forcing immediate flush');
-      this.flush();
+      void this.flush();
       return;
     }
 
@@ -48,27 +56,81 @@ export class AuditLogBufferService implements OnModuleDestroy {
     }
 
     if (this.entries.length >= this.config.bufferSize) {
-      this.flush();
+      void this.flush();
     }
   }
 
   async flush(): Promise<void> {
-    if (this.isFlushing || this.entries.length === 0) return;
+    if (this.isFlushing) {
+      await this.activeFlush;
+      return;
+    }
+
+    if (this.entries.length === 0) return;
+
     this.isFlushing = true;
 
     const batch = this.entries.splice(0, this.entries.length);
+    this.activeFlush = this.flushBatch(batch);
+    await this.activeFlush;
+  }
+
+  private async flushBatch(batch: BufferEntry[]): Promise<void> {
     try {
-      await this.flushCallback(batch);
+      if (!this.flushCallback) {
+        throw new Error('Audit log buffer flush callback is not configured');
+      }
+
+      await this.flushCallback(
+        batch.map(({ retryCount: _retryCount, ...entry }) => entry),
+      );
     } catch (error) {
       this.logger.error('Error flushing audit log buffer:', error);
+      this.requeueFailedBatch(batch);
     } finally {
       this.isFlushing = false;
+      this.activeFlush = null;
+
+      if (this.entries.length >= this.config.bufferSize) {
+        void this.flush();
+      }
+    }
+  }
+
+  private requeueFailedBatch(batch: BufferEntry[]): void {
+    const maxRetries = this.config.maxFlushRetries ?? 3;
+    const retriedEntries = batch.map((entry) => ({
+      ...entry,
+      retryCount: (entry.retryCount ?? 0) + 1,
+    }));
+    const retryableEntries = retriedEntries.filter(
+      (entry) => (entry.retryCount ?? 0) <= maxRetries,
+    );
+    const permanentlyDropped = retriedEntries.length - retryableEntries.length;
+
+    if (permanentlyDropped > 0) {
+      this.droppedEntries += permanentlyDropped;
+      this.logger.error(
+        `Dropping ${permanentlyDropped} audit log buffer entries after ${maxRetries} failed flush attempts`,
+      );
+    }
+
+    if (retryableEntries.length === 0) return;
+
+    this.entries.unshift(...retryableEntries);
+
+    if (this.entries.length > this.config.maxBufferSize) {
+      const overflowEntries = this.entries.splice(this.config.maxBufferSize);
+      this.droppedEntries += overflowEntries.length;
+      this.logger.error(
+        `Buffer overflow after flush failure — dropping ${overflowEntries.length} queued entries`,
+      );
     }
   }
 
   private startFlushTimer(): void {
     this.flushTimer = setInterval(() => {
-      this.flush();
+      void this.flush();
     }, this.config.flushIntervalMs);
   }
 
@@ -77,11 +139,35 @@ export class AuditLogBufferService implements OnModuleDestroy {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
     }
-    await this.flush();
+
+    if (this.activeFlush) {
+      await this.activeFlush;
+    }
+
+    const maxShutdownFlushes = (this.config.maxFlushRetries ?? 3) + 1;
+    let shutdownFlushes = 0;
+
+    while (this.entries.length > 0 && shutdownFlushes < maxShutdownFlushes) {
+      shutdownFlushes += 1;
+      await this.flush();
+    }
+
+    if (this.entries.length > 0) {
+      this.droppedEntries += this.entries.length;
+      this.logger.error(
+        `Shutdown completed with ${this.entries.length} audit log buffer entries not persisted`,
+      );
+      this.entries.splice(0, this.entries.length);
+    }
+
     this.logger.log('Buffer flushed on shutdown');
   }
 
   getBufferSize(): number {
     return this.entries.length;
+  }
+
+  getDroppedEntriesCount(): number {
+    return this.droppedEntries;
   }
 }

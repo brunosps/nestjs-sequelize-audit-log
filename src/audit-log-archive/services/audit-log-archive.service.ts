@@ -88,7 +88,7 @@ export class AuditLogArchiveService {
     this.logger.log(`🔄 Starting cursor-based processing for ${tableName}`);
 
     const batchSize = Math.min(this.config.batchSize || 1000, 500);
-    let lastCreatedAt: Date | null = null;
+    let lastCursor: { createdAt: Date; id: any } | null = null;
     let hasMoreRecords = true;
     let totalProcessed = 0;
 
@@ -99,21 +99,46 @@ export class AuditLogArchiveService {
 
     while (hasMoreRecords) {
       this.logger.log(
-        `📊 Processing batch with cursor after ${lastCreatedAt || 'start'} for ${tableName}`,
+        `📊 Processing batch with cursor after ${
+          lastCursor
+            ? `${lastCursor.createdAt.toISOString()} / ${lastCursor.id}`
+            : 'start'
+        } for ${tableName}`,
       );
 
       let currentBatchRecords: Record<string, any>[] = [];
 
       try {
-        const whereCondition: any = {
+        let whereCondition: any = {
           createdAt: {
             [Op.lt]: cutoffDate,
           },
         };
 
-        if (lastCreatedAt) {
-          whereCondition.createdAt = {
-            [Op.and]: [{ [Op.lt]: cutoffDate }, { [Op.gt]: lastCreatedAt }],
+        if (lastCursor) {
+          whereCondition = {
+            [Op.and]: [
+              {
+                createdAt: {
+                  [Op.lt]: cutoffDate,
+                },
+              },
+              {
+                [Op.or]: [
+                  {
+                    createdAt: {
+                      [Op.gt]: lastCursor.createdAt,
+                    },
+                  },
+                  {
+                    createdAt: lastCursor.createdAt,
+                    [primaryKey]: {
+                      [Op.gt]: lastCursor.id,
+                    },
+                  },
+                ],
+              },
+            ],
           };
         }
 
@@ -122,7 +147,10 @@ export class AuditLogArchiveService {
         ).findAll({
           where: whereCondition,
           limit: batchSize,
-          order: [['createdAt', 'ASC']],
+          order: [
+            ['createdAt', 'ASC'],
+            [primaryKey, 'ASC'],
+          ],
           raw: true,
         });
 
@@ -148,26 +176,24 @@ export class AuditLogArchiveService {
           (record) => !existingIds.has(record[primaryKey]),
         );
 
+        const parentArchiveSucceeded =
+          recordsToArchive.length === 0 ||
+          (await this.archiveRecordsInBatches(
+            archiveModel,
+            tableName,
+            recordsToArchive,
+            250,
+          ));
+
+        if (!parentArchiveSucceeded) {
+          this.logger.error(
+            `Archive copy failed for ${tableName}; source deletion skipped for current batch`,
+          );
+          this.archiveSuccess.set(tableName, false);
+          return;
+        }
+
         if (recordsToArchive.length > 0) {
-          const insertBatchSize = Math.min(recordsToArchive.length, 250);
-          for (let i = 0; i < recordsToArchive.length; i += insertBatchSize) {
-            const insertBatch = recordsToArchive.slice(i, i + insertBatchSize);
-
-            try {
-              await (archiveModel as ModelCtor<Model<any, any>>).bulkCreate(
-                insertBatch,
-              );
-              this.logger.log(
-                `💾 Inserted ${insertBatch.length} records into archive for ${tableName}`,
-              );
-            } catch (insertError) {
-              this.logger.error(
-                `❌ Error inserting batch into ${tableName}:`,
-                insertError,
-              );
-            }
-          }
-
           this.logger.log(
             `✅ Archived ${recordsToArchive.length} new records from ${tableName}. ${currentBatchRecords.length - recordsToArchive.length} already existed.`,
           );
@@ -177,15 +203,36 @@ export class AuditLogArchiveService {
           );
         }
 
-        const parentIdsToDelete = currentBatchRecords.map((r: any) => r[primaryKey]);
+        const parentIdsToDelete = currentBatchRecords.map(
+          (r: any) => r[primaryKey],
+        );
 
         totalProcessed += currentBatchRecords.length;
 
-        await this.processChildTablesForBatch(parentIdsToDelete);
+        const childTablesArchived =
+          await this.processChildTablesForBatch(parentIdsToDelete);
 
-        await this.deleteRecordsForBatch(parentIdsToDelete);
+        if (!childTablesArchived) {
+          this.logger.error(
+            'Child table archive failed; source deletion skipped for current batch',
+          );
+          this.archiveSuccess.set(tableName, false);
+          return;
+        }
 
-        lastCreatedAt = new Date(currentBatchRecords[currentBatchRecords.length - 1].createdAt);
+        const deletionSucceeded =
+          await this.deleteRecordsForBatch(parentIdsToDelete);
+
+        if (!deletionSucceeded) {
+          this.archiveSuccess.set(tableName, false);
+          return;
+        }
+
+        const lastRecord = currentBatchRecords[currentBatchRecords.length - 1];
+        lastCursor = {
+          createdAt: new Date(lastRecord.createdAt),
+          id: lastRecord[primaryKey],
+        };
 
         if (currentBatchRecords.length < batchSize) {
           hasMoreRecords = false;
@@ -205,7 +252,12 @@ export class AuditLogArchiveService {
           );
 
           if (currentBatchRecords.length > 0) {
-            lastCreatedAt = new Date(currentBatchRecords[currentBatchRecords.length - 1].createdAt);
+            const lastRecord =
+              currentBatchRecords[currentBatchRecords.length - 1];
+            lastCursor = {
+              createdAt: new Date(lastRecord.createdAt),
+              id: lastRecord[primaryKey],
+            };
             totalProcessed += currentBatchRecords.length;
 
             if (currentBatchRecords.length < batchSize) {
@@ -224,7 +276,7 @@ export class AuditLogArchiveService {
       }
     }
 
-    this.clearLogs(archiveModel, {
+    await this.clearArchiveLogs(archiveModel, {
       logType: {
         [Op.notIn]: ['ENTITY', 'LOGIN', 'EVENT'],
       },
@@ -244,7 +296,9 @@ export class AuditLogArchiveService {
   /**
    * Processa todas as tabelas filhas para um lote específico de IDs da tabela pai
    */
-  private async processChildTablesForBatch(parentIds: string[]): Promise<void> {
+  private async processChildTablesForBatch(
+    parentIds: string[],
+  ): Promise<boolean> {
     const childTables = [
       'audit_logs_details',
       'audit_logs_entity',
@@ -264,104 +318,108 @@ export class AuditLogArchiveService {
       `🔄 Processing ${childTables.length} child tables for batch of ${parentIds.length} parent IDs`,
     );
 
-    await Promise.all(
+    const results = await Promise.all(
       childTables.map(async (tableName) => {
         try {
           this.logger.log(`📊 Processing child table: ${tableName}`);
 
-        const model = this.getModelByTableName(this.models, tableName);
-        const archiveModel = this.getModelByTableName(
-          this.archiveModels,
-          tableName,
-        );
+          const model = this.getModelByTableName(this.models, tableName);
+          const archiveModel = this.getModelByTableName(
+            this.archiveModels,
+            tableName,
+          );
 
-        // Buscar registros filhos que referenciam os IDs pai deste lote
-        const records: Record<string, any>[] = await (
-          model as ModelCtor<Model<any, any>>
-        ).findAll({
-          where: {
-            log_id: {
-              [Op.in]: parentIds,
+          // Buscar registros filhos que referenciam os IDs pai deste lote
+          const records: Record<string, any>[] = await (
+            model as ModelCtor<Model<any, any>>
+          ).findAll({
+            where: {
+              log_id: {
+                [Op.in]: parentIds,
+              },
             },
-          },
-          raw: true,
-        });
+            raw: true,
+          });
 
-        if (records.length > 0) {
-          this.logger.log(
-            `📝 Found ${records.length} records in ${tableName} for current batch`,
-          );
+          if (records.length > 0) {
+            this.logger.log(
+              `📝 Found ${records.length} records in ${tableName} for current batch`,
+            );
 
-          // Verificar duplicidade usando chave primária específica de cada registro
-          const existingRecordIds = await this.getExistingRecordsInArchive(
-            archiveModel,
-            records,
-          );
+            // Verificar duplicidade usando chave primária específica de cada registro
+            const existingRecordIds = await this.getExistingRecordsInArchive(
+              archiveModel,
+              records,
+            );
 
-          // Filtrar apenas registros novos baseado na chave primária
-          const primaryKey = archiveModel.primaryKeyAttribute;
-          const recordsToArchive = records.filter(
-            (record) =>
-              record[primaryKey] && !existingRecordIds.has(record[primaryKey]),
-          );
+            // Filtrar apenas registros novos baseado na chave primária
+            const primaryKey = archiveModel.primaryKeyAttribute;
+            const recordsToArchive = records.filter(
+              (record) =>
+                record[primaryKey] &&
+                !existingRecordIds.has(record[primaryKey]),
+            );
 
-          if (recordsToArchive.length > 0) {
-            // Processar em sub-lotes para evitar timeouts
-            const insertBatchSize = Math.min(recordsToArchive.length, 100);
-            for (let i = 0; i < recordsToArchive.length; i += insertBatchSize) {
-              const insertBatch = recordsToArchive.slice(
-                i,
-                i + insertBatchSize,
+            const recordsWithoutPrimaryKey = records.filter(
+              (record) =>
+                record[primaryKey] === null || record[primaryKey] === undefined,
+            );
+
+            if (recordsWithoutPrimaryKey.length > 0) {
+              this.logger.error(
+                `Found ${recordsWithoutPrimaryKey.length} records without primary key in ${tableName}`,
               );
-
-              try {
-                await (archiveModel as ModelCtor<Model<any, any>>).bulkCreate(
-                  insertBatch,
-                );
-                this.logger.log(
-                  `💾 Inserted ${insertBatch.length} records into archive for ${tableName}`,
-                );
-              } catch (insertError) {
-                this.logger.error(
-                  `❌ Error inserting batch into ${tableName}:`,
-                  insertError,
-                );
-                // Continuar com próximo lote mesmo se um falhar
-              }
+              return false;
             }
 
-            this.logger.log(
-              `✅ Archived ${recordsToArchive.length} new records from ${tableName}. ${records.length - recordsToArchive.length} already existed.`,
-            );
+            if (recordsToArchive.length > 0) {
+              const archiveSucceeded = await this.archiveRecordsInBatches(
+                archiveModel,
+                tableName,
+                recordsToArchive,
+                100,
+              );
+
+              if (!archiveSucceeded) {
+                return false;
+              }
+
+              this.logger.log(
+                `✅ Archived ${recordsToArchive.length} new records from ${tableName}. ${records.length - recordsToArchive.length} already existed.`,
+              );
+            } else {
+              this.logger.log(
+                `ℹ️ All ${records.length} records from ${tableName} already existed in archive.`,
+              );
+            }
           } else {
             this.logger.log(
-              `ℹ️ All ${records.length} records from ${tableName} already existed in archive.`,
+              `ℹ️ No records found in ${tableName} for current batch`,
             );
           }
-        } else {
-          this.logger.log(
-            `ℹ️ No records found in ${tableName} for current batch`,
-          );
-        }
 
-        if (!noClearTables.includes(tableName)) {
-          this.clearLogs(archiveModel);
+          if (!noClearTables.includes(tableName)) {
+            await this.clearArchiveLogs(archiveModel);
+          }
+          return true;
+        } catch (error) {
+          this.logger.error(
+            `❌ Error processing child table ${tableName}:`,
+            error,
+          );
+          return false;
         }
-      } catch (error) {
-        this.logger.error(
-          `❌ Error processing child table ${tableName}:`,
-          error,
-        );
-      }
       }),
     );
 
     this.logger.log(
       `✅ Completed processing all child tables for current batch`,
     );
+
+    return results.every(Boolean);
   }
 
-  private async deleteRecordsForBatch(parentIds: string[]): Promise<void> {
+  private async deleteRecordsForBatch(parentIds: string[]): Promise<boolean> {
     const deletionOrder = [
       'audit_logs_details',
       'audit_logs_entity',
@@ -377,8 +435,8 @@ export class AuditLogArchiveService {
       `🗑️ Starting deletion for batch of ${parentIds.length} records`,
     );
 
-    for (const tableName of deletionOrder) {
-      try {
+    const deleteWithTransaction = async (transaction?: any) => {
+      for (const tableName of deletionOrder) {
         const model = this.getModelByTableName(this.models, tableName);
         const isParentTable = tableName === 'audit_logs';
 
@@ -391,6 +449,7 @@ export class AuditLogArchiveService {
                 [Op.in]: parentIds,
               },
             },
+            transaction,
           });
           deletedCount = result;
         } else {
@@ -400,6 +459,7 @@ export class AuditLogArchiveService {
                 [Op.in]: parentIds,
               },
             },
+            transaction,
           });
           deletedCount = result;
         }
@@ -411,15 +471,69 @@ export class AuditLogArchiveService {
         } else {
           this.logger.log(`ℹ️ No records to delete from ${tableName}`);
         }
-      } catch (error) {
-        this.logger.error(
-          `❌ Error deleting records from ${tableName}:`,
-          error,
-        );
       }
+    };
+
+    try {
+      if (typeof (this.sequelize as any).transaction === 'function') {
+        await (this.sequelize as any).transaction((transaction: any) =>
+          deleteWithTransaction(transaction),
+        );
+      } else {
+        await deleteWithTransaction();
+      }
+    } catch (error) {
+      this.logger.error(
+        '❌ Error deleting archived records from source:',
+        error,
+      );
+      return false;
     }
 
     this.logger.log(`✅ Completed deletion for current batch`);
+    return true;
+  }
+
+  private async archiveRecordsInBatches(
+    archiveModel: typeof Model,
+    tableName: string,
+    recordsToArchive: Record<string, any>[],
+    batchSize: number,
+  ): Promise<boolean> {
+    for (let i = 0; i < recordsToArchive.length; i += batchSize) {
+      const insertBatch = recordsToArchive.slice(i, i + batchSize);
+
+      try {
+        await (archiveModel as ModelCtor<Model<any, any>>).bulkCreate(
+          insertBatch,
+        );
+        this.logger.log(
+          `💾 Inserted ${insertBatch.length} records into archive for ${tableName}`,
+        );
+      } catch (insertError) {
+        this.logger.error(
+          `❌ Error inserting batch into ${tableName}:`,
+          insertError,
+        );
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private async clearArchiveLogs(
+    model: typeof Model,
+    filter = {},
+  ): Promise<void> {
+    try {
+      await this.clearLogs(model, filter);
+    } catch (error) {
+      this.logger.error(
+        `Error clearing archived logs from ${model.tableName}:`,
+        error,
+      );
+    }
   }
 
   private async getExistingRecordsInArchive(

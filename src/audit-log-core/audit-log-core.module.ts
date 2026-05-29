@@ -10,11 +10,6 @@ import {
 } from '@nestjs/common';
 import { Sequelize } from 'sequelize-typescript';
 
-import {
-  AuditLogBufferConfig,
-  AuditLogGetInfoFromRequest,
-  AuditLogSequelizeConfig,
-} from '../interfaces/audit-log-module-options.interface';
 import { AuditLogModel } from '../audit-log-model/audit-log.model';
 import { AuditLogDetailModel } from '../audit-log-model/audit-log-detail.model';
 import { AuditLogEntityModel } from '../audit-log-model/audit-log-entity.model';
@@ -23,16 +18,23 @@ import { AuditLogEventModel } from '../audit-log-model/audit-log-event.model';
 import { AuditLogIntegrationModel } from '../audit-log-model/audit-log-integration.model';
 import { AuditLogLoginModel } from '../audit-log-model/audit-log-login.model';
 import { AuditLogRequestModel } from '../audit-log-model/audit-log-request.model';
+import {
+  AuditLogBufferConfig,
+  AuditLogGetInfoFromRequest,
+  AuditLogSequelizeConfig,
+} from '../interfaces/audit-log-module-options.interface';
 
 import { AuditLogCoreMiddleware } from './middlewares/audit-log-core.middleware';
-import { AuditLogBufferService } from './services/audit-log-buffer.service';
+import { createAuditLogModelsProvider } from './providers/audit-log-models.provider';
 import { AuditLogService } from './services/audit-log.service';
+import { AuditLogBufferService } from './services/audit-log-buffer.service';
 import { PayloadDetailsService } from './services/payload-details.service';
 
 const DEFAULT_BUFFER_CONFIG: AuditLogBufferConfig = {
   bufferSize: 100,
   flushIntervalMs: 5000,
   maxBufferSize: 1000,
+  maxFlushRetries: 3,
 };
 
 type AuditCoreModuleOptions = {
@@ -133,6 +135,7 @@ export class AuditLogCoreModule implements OnModuleDestroy {
           }
         },
       },
+      createAuditLogModelsProvider(),
     ];
 
     if (config.enableBuffer) {
@@ -145,13 +148,6 @@ export class AuditLogCoreModule implements OnModuleDestroy {
         {
           provide: 'BUFFER_CONFIG',
           useValue: mergedConfig,
-        },
-        {
-          provide: 'FLUSH_CALLBACK',
-          useFactory: (auditLogService: AuditLogService) => {
-            return (entries: any[]) => auditLogService.flushEntries(entries);
-          },
-          inject: [AuditLogService],
         },
         AuditLogBufferService,
         {

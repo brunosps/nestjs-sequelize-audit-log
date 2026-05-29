@@ -1,7 +1,6 @@
 import { type DynamicModule, Logger, Module } from '@nestjs/common';
 import { SequelizeModuleOptions } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize-typescript';
-import { ConnectionError } from 'sequelize';
 
 import { AuditLogModel } from '../audit-log-model/audit-log.model';
 import { AuditLogDetailModel } from '../audit-log-model/audit-log-detail.model';
@@ -44,6 +43,8 @@ export class AuditLogArchiveModule {
       host: config.archiveDatabase.host,
       port: config.archiveDatabase.port,
       database: config.archiveDatabase.database,
+      username: config.archiveDatabase.username,
+      password: config.archiveDatabase.password,
       dialectOptions: config.archiveDatabase.dialectOptions,
       logging: null,
     });
@@ -90,11 +91,17 @@ export class AuditLogArchiveModule {
 
           config.archiveDatabase.autoLoadModels = false;
 
+          const dialectOptions =
+            (config.archiveDatabase.dialectOptions as any) ?? {};
+          const existingSqlServerOptions = dialectOptions.options ?? {};
+
           config.archiveDatabase.dialectOptions = {
-            ...config.archiveDatabase.dialectOptions,
-            connectTimeout: 1 * 60 * 1000,
+            ...dialectOptions,
+            connectTimeout: dialectOptions.connectTimeout ?? 1 * 60 * 1000,
             options: {
-              requestTimeout: 1 * 60 * 1000,
+              ...existingSqlServerOptions,
+              requestTimeout:
+                existingSqlServerOptions.requestTimeout ?? 1 * 60 * 1000,
             },
           };
 
@@ -114,10 +121,7 @@ export class AuditLogArchiveModule {
         useFactory: (mainSequelize: Sequelize, auditSequelize?: Sequelize) => {
           return auditSequelize || mainSequelize;
         },
-        inject: [
-          Sequelize,
-          { token: 'AUDIT_SEQUELIZE', optional: true },
-        ],
+        inject: [Sequelize, { token: 'AUDIT_SEQUELIZE', optional: true }],
       },
       AuditLogArchiveService,
       AuditLogArchiveTask,

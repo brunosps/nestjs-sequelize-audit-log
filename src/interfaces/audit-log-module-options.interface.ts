@@ -46,6 +46,7 @@ export interface AuditLogBufferConfig {
   bufferSize: number;
   flushIntervalMs: number;
   maxBufferSize: number;
+  maxFlushRetries?: number;
 }
 
 export interface AuditLogModuleOptions {

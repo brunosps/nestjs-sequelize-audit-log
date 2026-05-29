@@ -36,17 +36,18 @@ npx audit-log-install-migrations src/migrations
 ```
 
 Este comando irá:
+
 - Copiar todas as migrações necessárias para o diretório especificado
 - Adicionar timestamp automático aos arquivos de migração
 - Garantir que não haja conflitos com migrações existentes
 
 #### Migrações Disponíveis
 
-| Migração | Descrição |
-|---|---|
-| `audit-log-migrations.js` | Criação das 8 tabelas principais com FK cascades |
-| `audit-log-performance-indexes.js` | ~35 índices de performance |
-| `audit-log-event-status.js` | Adiciona coluna `event_status` na tabela `audit_logs_event` |
+| Migração                           | Descrição                                                   |
+| ---------------------------------- | ----------------------------------------------------------- |
+| `audit-log-migrations.js`          | Criação das 8 tabelas principais com FK cascades            |
+| `audit-log-performance-indexes.js` | ~35 índices de performance                                  |
+| `audit-log-event-status.js`        | Adiciona coluna `event_status` na tabela `audit_logs_event` |
 
 ## Início Rápido
 
@@ -80,25 +81,30 @@ A interface principal de configuração fornece as seguintes opções:
 interface AuditLogModuleOptions {
   // Identificação do usuário
   getUserId?: (req: AuditLogRequest) => string;
-  
+
   // Extração do endereço IP
   getIpAddress?: (req: AuditLogRequest) => string;
-  
+
   // Ativadores de funcionalidades
   enableErrorLogging?: boolean;
   enableRequestLogging?: boolean;
   enableIntegrationLogging?: boolean;
-  
+
   // Auditoria de banco de dados
   auditedTables?: Array<string>;
-  
+
   // Rotas de autenticação
   authRoutes?: AuditLogRequestAuthRoute[];
-  
+
   // Configuração de retenção de logs
   logRetentionDays?: number; // Padrão: 30 dias
   cleaningCronSchedule?: string; // Padrão: '* */12 * * *' (a cada 12 horas)
-  
+
+  // Performance e isolamento de escrita
+  enableBuffer?: boolean;
+  bufferConfig?: Partial<AuditLogBufferConfig>;
+  auditSequelize?: AuditLogSequelizeConfig;
+
   // Configuração de arquivo
   enableArchive?: false | AuditLogArchiveConfig;
 }
@@ -145,12 +151,7 @@ Rastrear automaticamente mudanças em tabelas específicas do banco de dados:
 
 ```typescript
 AuditLogModule.register({
-  auditedTables: [
-    'users',
-    'orders',
-    'products',
-    'transactions',
-  ],
+  auditedTables: ['users', 'orders', 'products', 'transactions'],
 });
 ```
 
@@ -186,15 +187,16 @@ async updatePassword(updatePasswordInput: UpdatePasswordInput): Promise<UpdatePa
 
 **Opções do Decorator:**
 
-| Opção | Tipo | Obrigatório | Descrição |
-|---|---|---|---|
-| `eventType` | `string` | Sim | Tipo do evento |
-| `eventDescription` | `string` | Sim | Descrição do evento |
-| `getUserId` | `(args, result) => string` | Sim | Extrai o ID do usuário |
-| `getIpAddress` | `(args, result) => string` | Não | Extrai o endereço IP (padrão: `'0.0.0.0'`) |
-| `getDetails` | `(args, result) => Record<string, any>` | Não | Detalhes do evento em caso de **sucesso** |
-| `onError` | `(args, error) => Record<string, any>` | Não | Detalhes do evento em caso de **erro**. Se não fornecido, registra `{ params, error: { message, name } }` |
-```
+| Opção              | Tipo                                    | Obrigatório | Descrição                                                                                                 |
+| ------------------ | --------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------- |
+| `eventType`        | `string`                                | Sim         | Tipo do evento                                                                                            |
+| `eventDescription` | `string`                                | Sim         | Descrição do evento                                                                                       |
+| `getUserId`        | `(args, result) => string`              | Sim         | Extrai o ID do usuário                                                                                    |
+| `getIpAddress`     | `(args, result) => string`              | Não         | Extrai o endereço IP (padrão: `'0.0.0.0'`)                                                                |
+| `getDetails`       | `(args, result) => Record<string, any>` | Não         | Detalhes do evento em caso de **sucesso**                                                                 |
+| `onError`          | `(args, error) => Record<string, any>`  | Não         | Detalhes do evento em caso de **erro**. Se não fornecido, registra `{ params, error: { message, name } }` |
+
+````
 
 **Usando Injeção Direta do Service:**
 
@@ -203,7 +205,7 @@ import { AuditLogService } from 'nestjs-sequelize-audit-log';
 import { Injectable } from '@nestjs/common';
 
 @Injectable()
-export class UserService { 
+export class UserService {
   constructor(
     private readonly userRepository: UserRepository,
     private readonly auditLogService: AuditLogService,
@@ -211,7 +213,7 @@ export class UserService {
 
   async validateUser(input: ValidateUserInput): Promise<boolean> {
     const user = await this.userRepository.findByEmail(input.email);
-    
+
     // Log manual do evento com status
     this.auditLogService.logEvent({
       type: 'USER_VALIDATION',
@@ -226,11 +228,11 @@ export class UserService {
     if (!user) {
       throw new Error('Usuário não encontrado');
     }
-    
+
     return true;
   }
 }
-```
+````
 
 #### 6. Rotas de Autenticação
 
@@ -273,7 +275,7 @@ Configure o arquivamento de dados para armazenamento de longo prazo em um banco 
 ```typescript
 AuditLogModule.register({
   enableArchive: {
-    retentionPeriodInDays: 365, // dias
+    archiveRetentionDays: 365, // dias no banco de archive
     batchSize: 1000,
     archiveCronSchedule: '0 2 * * *', // Diariamente às 2h da manhã
     archiveDatabase: {
@@ -287,6 +289,33 @@ AuditLogModule.register({
   },
 });
 ```
+
+#### 9. Buffer e Pool Dedicado
+
+Use o buffer para reduzir a latência dos hooks de auditoria. Com o buffer ativo, `registerLog()` confirma o enfileiramento; a persistência acontece no flush por tamanho, intervalo ou shutdown.
+
+```typescript
+AuditLogModule.register({
+  enableBuffer: true,
+  bufferConfig: {
+    bufferSize: 100,
+    flushIntervalMs: 5000,
+    maxBufferSize: 1000,
+    maxFlushRetries: 3,
+  },
+  auditSequelize: {
+    dialect: 'mysql',
+    host: 'audit-db-host',
+    port: 3306,
+    database: 'audit_logs',
+    username: 'audit_user',
+    password: 'audit_password',
+    pool: { max: 5, min: 1, idle: 10000, acquire: 15000 },
+  },
+});
+```
+
+Quando `auditSequelize` conecta com sucesso, as escritas de auditoria usam esse pool dedicado. Se a conexão falhar, a biblioteca registra o erro e volta para o pool principal.
 
 ## Uso Avançado
 
@@ -303,12 +332,12 @@ AuditLogModule.register({
       const decoded = jwt.decode(token);
       return decoded?.sub;
     }
-    
+
     // Extração baseada em sessão
     if (req.session?.user) {
       return req.session.user.id;
     }
-    
+
     return 'anonymous';
   },
 });
@@ -400,9 +429,10 @@ Configure as definições de arquivamento de dados para mover logs de auditoria 
 
 ```typescript
 interface AuditLogArchiveConfig {
-  retentionPeriodInDays: number; // Número de dias para manter logs no banco principal
+  archiveCutoffDays?: number; // Dias no banco principal antes de arquivar; padrão: logRetentionDays
+  archiveRetentionDays: number; // Dias para manter logs no banco de archive
   archiveDatabase: SequelizeModuleOptions; // Configuração do banco separado
-  batchSize?: number; // Número de registros para processar por lote
+  batchSize?: number; // Número de registros por lote; limitado internamente a 500
   archiveCronSchedule: string; // Expressão cron para agendamento do arquivo
 }
 ```
@@ -410,6 +440,7 @@ interface AuditLogArchiveConfig {
 ### Modelos do Banco de Archive
 
 O sistema de archive cria modelos espelhados para todos os tipos de log de auditoria:
+
 - `ArchiveLogModel` - Logs de auditoria principais
 - `ArchiveLogEntityModel` - Logs de mudanças de entidade
 - `ArchiveLogErrorModel` - Logs de erro
@@ -424,7 +455,11 @@ O sistema de archive cria modelos espelhados para todos os tipos de log de audit
 A biblioteca comprime automaticamente payloads grandes (> 1 KB) usando gzip + Base64 para reduzir o uso de armazenamento no banco de dados. Utilitários estão disponíveis para compressão e descompressão manual:
 
 ```typescript
-import { compressPayload, decompressPayload, isCompressed } from 'nestjs-sequelize-audit-log';
+import {
+  compressPayload,
+  decompressPayload,
+  isCompressed,
+} from 'nestjs-sequelize-audit-log';
 
 // Comprime se o valor exceder o threshold (padrão: 1024 bytes)
 const compressed = compressPayload(largeJsonString);
@@ -437,6 +472,7 @@ if (isCompressed(compressed)) {
 ```
 
 A compressão é aplicada automaticamente nos seguintes campos:
+
 - **Log de Integração**: `requestPayload`, `responsePayload`
 - **Log de Requisição**: `payload`, `responseBody`
 
@@ -492,8 +528,13 @@ export class AppModule {}
       enableErrorLogging: true,
       enableIntegrationLogging: true,
       auditedTables: [
-        'users', 'orders', 'products', 'transactions',
-        'invoices', 'payments', 'shipping',
+        'users',
+        'orders',
+        'products',
+        'transactions',
+        'invoices',
+        'payments',
+        'shipping',
       ],
       getUserId: (req) => extractUserFromJWT(req),
       getIpAddress: (req) => extractRealIP(req),
@@ -507,7 +548,7 @@ export class AppModule {}
         },
       ],
       enableArchive: {
-        retentionPeriodInDays: 2555, // 7 anos
+        archiveRetentionDays: 2555, // 7 anos no banco de archive
         batchSize: 5000,
         archiveCronSchedule: '0 2 * * *', // Diariamente às 2h da manhã
         archiveDatabase: {
@@ -546,16 +587,18 @@ export class ExternalSystemService {
       const client = await createAuditSoapClient(
         process.env.EXTERNAL_WSDL_URL!, // URL do WSDL
         { wsdl_options: { timeout: 60000 } }, // Opções do SOAP
-        process.env.EXTERNAL_ENDPOINT // Endpoint opcional
+        process.env.EXTERNAL_ENDPOINT, // Endpoint opcional
       );
 
       // Configure autenticação se necessário
       if (process.env.EXTERNAL_USER && process.env.EXTERNAL_PASSWORD) {
         const { BasicAuthSecurity } = await import('soap');
-        client.setSecurity(new BasicAuthSecurity(
-          process.env.EXTERNAL_USER,
-          process.env.EXTERNAL_PASSWORD
-        ));
+        client.setSecurity(
+          new BasicAuthSecurity(
+            process.env.EXTERNAL_USER,
+            process.env.EXTERNAL_PASSWORD,
+          ),
+        );
       }
 
       this.logger.log('Cliente SOAP criado com sucesso');
@@ -568,10 +611,10 @@ export class ExternalSystemService {
 
   async executarOperacao(dados: any) {
     const client = await this.getClient();
-    
+
     // Todas as chamadas são automaticamente auditadas
     const resultado = await client.MinhaOperacaoAsync(dados);
-    
+
     return resultado;
   }
 }
@@ -580,13 +623,15 @@ export class ExternalSystemService {
 ### Funcionalidades do SOAP Client
 
 #### 1. Auditoria Automática
+
 - **Requisições**: Log completo do XML SOAP enviado
-- **Respostas**: Log completo do XML SOAP recebido  
+- **Respostas**: Log completo do XML SOAP recebido
 - **Erros**: Captura e log de erros SOAP
 - **Timing**: Medição automática da duração das chamadas
 - **Método**: Extração automática do método SOAP executado
 
 #### 2. Extração Inteligente de Informações
+
 - **Integration Name**: Extraído automaticamente da URL do WSDL ou endpoint
 - **Método SOAP**: Detectado automaticamente do XML, ignorando namespaces
 - **URLs**: Incluídas automaticamente no nome da integração para rastreabilidade
@@ -601,7 +646,7 @@ export class IntegracaoExternalService {
   async consultarCliente(cpf: string) {
     const client = await createAuditSoapClient(
       process.env.EXTERNAL_CONSULTAR_CLIENTE_WSDL!,
-      { wsdl_options: { timeout: 30000 } }
+      { wsdl_options: { timeout: 30000 } },
     );
 
     const resultado = await client.ConsultarClienteAsync({ cpf });
@@ -611,11 +656,11 @@ export class IntegracaoExternalService {
   async manterProdutos(dados: any) {
     const client = await createAuditSoapClient(
       process.env.EXTERNAL_MANTER_PRODUTOS_WSDL!,
-      { 
+      {
         wsdl_options: { timeout: 60000 },
-        endpoint: process.env.EXTERNAL_MANTER_PRODUTOS_ENDPOINT 
+        endpoint: process.env.EXTERNAL_MANTER_PRODUTOS_ENDPOINT,
       },
-      process.env.EXTERNAL_MANTER_PRODUTOS_ENDPOINT
+      process.env.EXTERNAL_MANTER_PRODUTOS_ENDPOINT,
     );
 
     const resultado = await client.ManterProdutosAsync(dados);
@@ -625,7 +670,7 @@ export class IntegracaoExternalService {
   async processarPedido(pedidoData: any) {
     const client = await createAuditSoapClient(
       process.env.EXTERNAL_PROCESSAR_PEDIDO_WSDL!,
-      { wsdl_options: { timeout: 90000 } }
+      { wsdl_options: { timeout: 90000 } },
     );
 
     const resultado = await client.ProcessarPedidoAsync(pedidoData);
@@ -655,21 +700,25 @@ EXTERNAL_PASSWORD=senha_secreta
 ### Vantagens da Auditoria SOAP
 
 #### 1. **Rastreabilidade Completa**
+
 - Histórico completo de todas as chamadas SOAP
 - Identificação precisa de métodos executados
 - Logs de erro detalhados para debug
 
 #### 2. **Performance Monitoring**
+
 - Medição automática de tempo de resposta
 - Identificação de gargalos de performance
 - Métricas por serviço e método
 
 #### 3. **Debugging Facilitado**
+
 - XML completo das requisições e respostas
 - Stack traces de erros SOAP
 - Identificação de falhas de conectividade
 
 #### 4. **Compliance e Auditoria**
+
 - Registro completo para auditoria externa
 - Rastreamento de mudanças de dados
 - Conformidade com regulamentações
@@ -688,15 +737,16 @@ export class MonitoringService {
     const logs = await this.auditLogService.findIntegrationLogs({
       startDate: dataInicio,
       endDate: dataFim,
-      type: 'INTEGRATION'
+      type: 'INTEGRATION',
     });
 
     return {
       totalChamadas: logs.length,
-      sucesso: logs.filter(log => log.status === '200').length,
-      erros: logs.filter(log => log.status !== '200').length,
-      tempoMedio: logs.reduce((acc, log) => acc + log.duration, 0) / logs.length,
-      servicosMaisUsados: this.agruparPorServico(logs)
+      sucesso: logs.filter((log) => log.status === '200').length,
+      erros: logs.filter((log) => log.status !== '200').length,
+      tempoMedio:
+        logs.reduce((acc, log) => acc + log.duration, 0) / logs.length,
+      servicosMaisUsados: this.agruparPorServico(logs),
     };
   }
 }
@@ -705,6 +755,7 @@ export class MonitoringService {
 ### Melhores Práticas para SOAP
 
 #### 1. **Sempre Use createAuditSoapClient**
+
 ```typescript
 // ✅ CORRETO
 const client = await createAuditSoapClient(wsdlUrl, options, endpoint);
@@ -714,16 +765,18 @@ const client = await soap.createClientAsync(wsdlUrl, options);
 ```
 
 #### 2. **Configure Timeouts Adequados**
+
 ```typescript
 const client = await createAuditSoapClient(wsdlUrl, {
-  wsdl_options: { 
+  wsdl_options: {
     timeout: 60000, // 60 segundos
-    rejectUnauthorized: false // apenas para desenvolvimento
-  }
+    rejectUnauthorized: false, // apenas para desenvolvimento
+  },
 });
 ```
 
 #### 3. **Trate Erros Apropriadamente**
+
 ```typescript
 try {
   const client = await createAuditSoapClient(wsdlUrl, options);
@@ -736,11 +789,12 @@ try {
 ```
 
 #### 4. **Use Variáveis de Ambiente**
+
 ```typescript
 const client = await createAuditSoapClient(
   process.env.WSDL_URL!, // ! indica que é obrigatório
   { wsdl_options: { timeout: parseInt(process.env.SOAP_TIMEOUT || '60000') } },
-  process.env.SOAP_ENDPOINT
+  process.env.SOAP_ENDPOINT,
 );
 ```
 
@@ -753,22 +807,24 @@ Configure alertas baseados nos logs SOAP:
 export class SoapMonitoringService {
   async verificarSaudeSoap() {
     const ultimaHora = new Date(Date.now() - 60 * 60 * 1000);
-    
+
     const errosRecentes = await this.auditLogService.countIntegrationErrors({
       since: ultimaHora,
-      type: 'INTEGRATION'
+      type: 'INTEGRATION',
     });
 
     if (errosRecentes > 10) {
       await this.enviarAlerta('Alto número de erros SOAP na última hora');
     }
 
-    const tempoMedioResposta = await this.auditLogService.getAverageResponseTime({
-      since: ultimaHora,
-      type: 'INTEGRATION'
-    });
+    const tempoMedioResposta =
+      await this.auditLogService.getAverageResponseTime({
+        since: ultimaHora,
+        type: 'INTEGRATION',
+      });
 
-    if (tempoMedioResposta > 30000) { // 30 segundos
+    if (tempoMedioResposta > 30000) {
+      // 30 segundos
       await this.enviarAlerta('Tempo de resposta SOAP acima do normal');
     }
   }

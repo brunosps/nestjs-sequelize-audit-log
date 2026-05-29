@@ -1,4 +1,7 @@
-import { AuditLogBufferService, BufferEntry } from '../audit-log-buffer.service';
+import {
+  AuditLogBufferService,
+  BufferEntry,
+} from '../audit-log-buffer.service';
 
 describe('AuditLogBufferService', () => {
   let service: AuditLogBufferService;
@@ -19,8 +22,10 @@ describe('AuditLogBufferService', () => {
       bufferSize: 3,
       flushIntervalMs: 5000,
       maxBufferSize: 10,
+      maxFlushRetries: 3,
     };
-    service = new AuditLogBufferService(config, flushCallback);
+    service = new AuditLogBufferService(config);
+    service.setFlushCallback(flushCallback);
   });
 
   afterEach(async () => {
@@ -80,7 +85,7 @@ describe('AuditLogBufferService', () => {
       expect(flushCallback).not.toHaveBeenCalled();
     });
 
-    it('deve perder entries e logar erro quando flushCallback falha', async () => {
+    it('deve reencaminhar entries e logar erro quando flushCallback falha', async () => {
       const errorSpy = jest
         .spyOn((service as any).logger, 'error')
         .mockImplementation(() => {});
@@ -93,7 +98,38 @@ describe('AuditLogBufferService', () => {
         'Error flushing audit log buffer:',
         expect.any(Error),
       );
+      expect(service.getBufferSize()).toBe(1);
+      expect(service.getDroppedEntriesCount()).toBe(0);
+
+      flushCallback.mockResolvedValueOnce(undefined);
+      await service.flush();
+
       expect(service.getBufferSize()).toBe(0);
+      errorSpy.mockRestore();
+    });
+
+    it('deve descartar entries após exceder maxFlushRetries', async () => {
+      const retryService = new AuditLogBufferService({
+        bufferSize: 10,
+        flushIntervalMs: 60000,
+        maxBufferSize: 10,
+        maxFlushRetries: 1,
+      });
+      retryService.setFlushCallback(flushCallback);
+      const errorSpy = jest
+        .spyOn((retryService as any).logger, 'error')
+        .mockImplementation(() => {});
+      flushCallback.mockRejectedValue(new Error('DB error'));
+
+      retryService.add(createEntry());
+      await retryService.flush();
+      expect(retryService.getBufferSize()).toBe(1);
+
+      await retryService.flush();
+      expect(retryService.getBufferSize()).toBe(0);
+      expect(retryService.getDroppedEntriesCount()).toBe(1);
+
+      await retryService.onModuleDestroy();
       errorSpy.mockRestore();
     });
 
@@ -109,12 +145,17 @@ describe('AuditLogBufferService', () => {
       const firstFlush = service.flush();
 
       service.add(createEntry());
-      await service.flush();
+      const secondFlush = service.flush();
 
       expect(flushCallback).toHaveBeenCalledTimes(1);
 
       resolveFlush!();
-      await firstFlush;
+      await Promise.all([firstFlush, secondFlush]);
+
+      expect(flushCallback).toHaveBeenCalledTimes(1);
+
+      await service.flush();
+      expect(flushCallback).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -130,22 +171,50 @@ describe('AuditLogBufferService', () => {
   });
 
   describe('warning a 80%', () => {
-    it('deve logar warning quando buffer atinge 80% de maxBufferSize', () => {
-      const largeService = new AuditLogBufferService(
-        { bufferSize: 100, flushIntervalMs: 60000, maxBufferSize: 10 },
-        flushCallback,
-      );
+    it('deve logar warning quando buffer atinge 80% de maxBufferSize', async () => {
+      const largeService = new AuditLogBufferService({
+        bufferSize: 100,
+        flushIntervalMs: 60000,
+        maxBufferSize: 10,
+      });
+      largeService.setFlushCallback(flushCallback);
       const warnSpy = jest.spyOn((largeService as any).logger, 'warn');
 
       for (let i = 0; i < 8; i++) {
         largeService.add(createEntry());
       }
 
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('capacity'),
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('capacity'));
+
+      await largeService.onModuleDestroy();
+    });
+  });
+
+  describe('backpressure', () => {
+    it('deve contabilizar entradas descartadas quando buffer está cheio durante flush', async () => {
+      let resolveFlush: () => void;
+      flushCallback.mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          resolveFlush = resolve;
+        }),
       );
 
-      largeService.onModuleDestroy();
+      const smallService = new AuditLogBufferService({
+        bufferSize: 1,
+        flushIntervalMs: 60000,
+        maxBufferSize: 1,
+        maxFlushRetries: 1,
+      });
+      smallService.setFlushCallback(flushCallback);
+
+      smallService.add(createEntry());
+      smallService.add(createEntry());
+      smallService.add(createEntry());
+
+      expect(smallService.getDroppedEntriesCount()).toBe(1);
+
+      resolveFlush!();
+      await smallService.onModuleDestroy();
     });
   });
 

@@ -1,15 +1,24 @@
 import { AuditLogModule } from '../audit-log.module';
 import { AuditLogArchiveModule } from '../audit-log-archive/audit-log-archive.module';
+import { AuditLogCoreModule } from '../audit-log-core/audit-log-core.module';
 import { AuditLogModuleOptions } from '../interfaces/audit-log-module-options.interface';
 
 jest.mock('../audit-log-archive/audit-log-archive.module', () => {
-  const actual = jest.requireActual('../audit-log-archive/audit-log-archive.module');
+  const actual = jest.requireActual(
+    '../audit-log-archive/audit-log-archive.module',
+  );
   return {
     ...actual,
     AuditLogArchiveModule: {
       ...actual.AuditLogArchiveModule,
       testSequelizeConnection: jest.fn().mockResolvedValue(false),
-      register: jest.fn().mockReturnValue({ module: class MockArchive {}, providers: [], exports: [] }),
+      register: jest
+        .fn()
+        .mockReturnValue({
+          module: class MockArchive {},
+          providers: [],
+          exports: [],
+        }),
     },
   };
 });
@@ -36,7 +45,9 @@ describe('AuditLogModule', () => {
     });
 
     const providers = result.providers as any[];
-    const cronProvider = providers.find((p) => p.provide === 'CLEANING_CRON_SCHEDULE');
+    const cronProvider = providers.find(
+      (p) => p.provide === 'CLEANING_CRON_SCHEDULE',
+    );
     expect(cronProvider).toBeDefined();
     expect(cronProvider.useValue).toBe('0 0 * * *');
   });
@@ -47,7 +58,7 @@ describe('AuditLogModule', () => {
       auditedTables: ['users', 'orders'],
     });
 
-    // imports should include database module  
+    // imports should include database module
     expect(result.imports.length).toBeGreaterThan(2); // core + event + database
   });
 
@@ -88,8 +99,16 @@ describe('AuditLogModule', () => {
     expect(result.imports.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('should export the core module so consumers can inject AuditLogService', async () => {
+    const result = await AuditLogModule.register({ ...defaultOpts });
+
+    expect(result.exports).toEqual(expect.arrayContaining([AuditLogCoreModule]));
+  });
+
   it('should try archive connection but fall back to cleaning when it fails', async () => {
-    (AuditLogArchiveModule.testSequelizeConnection as jest.Mock).mockResolvedValue(false);
+    (
+      AuditLogArchiveModule.testSequelizeConnection as jest.Mock
+    ).mockResolvedValue(false);
 
     const result = await AuditLogModule.register({
       ...defaultOpts,
@@ -101,26 +120,61 @@ describe('AuditLogModule', () => {
     });
 
     const providers = result.providers as any[];
-    const cronProvider = providers.find((p) => p.provide === 'CLEANING_CRON_SCHEDULE');
+    const cronProvider = providers.find(
+      (p) => p.provide === 'CLEANING_CRON_SCHEDULE',
+    );
     expect(cronProvider).toBeDefined();
   });
 
   it('should use archive module when connection succeeds', async () => {
-    (AuditLogArchiveModule.testSequelizeConnection as jest.Mock).mockResolvedValue(true);
+    (
+      AuditLogArchiveModule.testSequelizeConnection as jest.Mock
+    ).mockResolvedValue(true);
+
+    const archiveConfig = {
+      archiveRetentionDays: 90,
+      archiveDatabase: { dialect: 'mssql', host: 'localhost' } as any,
+      archiveCronSchedule: '0 2 * * *',
+    };
 
     const result = await AuditLogModule.register({
       ...defaultOpts,
-      enableArchive: {
-        archiveRetentionDays: 90,
-        archiveDatabase: { dialect: 'mssql', host: 'localhost' } as any,
-        archiveCronSchedule: '0 2 * * *',
-      },
+      enableArchive: archiveConfig,
     });
 
     // Should not have cleaning task
     const providers = result.providers as any[];
-    const cronProvider = providers?.find?.((p: any) => p.provide === 'CLEANING_CRON_SCHEDULE');
+    const cronProvider = providers?.find?.(
+      (p: any) => p.provide === 'CLEANING_CRON_SCHEDULE',
+    );
     expect(cronProvider).toBeUndefined();
+    expect(AuditLogArchiveModule.register).toHaveBeenCalledWith({
+      ...archiveConfig,
+      archiveCutoffDays: defaultOpts.logRetentionDays,
+    });
+  });
+
+  it('should preserve explicit archiveCutoffDays when archive is enabled', async () => {
+    (
+      AuditLogArchiveModule.testSequelizeConnection as jest.Mock
+    ).mockResolvedValue(true);
+
+    const archiveConfig = {
+      archiveCutoffDays: 45,
+      archiveRetentionDays: 90,
+      archiveDatabase: { dialect: 'mssql', host: 'localhost' } as any,
+      archiveCronSchedule: '0 2 * * *',
+    };
+
+    await AuditLogModule.register({
+      ...defaultOpts,
+      enableArchive: archiveConfig,
+    });
+
+    expect(AuditLogArchiveModule.testSequelizeConnection).toHaveBeenCalledWith(
+      archiveConfig,
+    );
+    expect(AuditLogArchiveModule.register).toHaveBeenCalledWith(archiveConfig);
   });
 
   it('should pass getUserId and getIpAddress to core module', async () => {

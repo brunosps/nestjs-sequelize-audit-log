@@ -37,17 +37,18 @@ npx audit-log-install-migrations src/migrations
 ```
 
 This command will:
+
 - Copy all necessary migrations to the specified directory
 - Automatically add timestamps to migration filenames
 - Ensure no conflicts with existing migrations
 
 #### Available Migrations
 
-| Migration | Description |
-|---|---|
-| `audit-log-migrations.js` | Creates the 8 main tables with FK cascades |
-| `audit-log-performance-indexes.js` | ~35 performance indexes |
-| `audit-log-event-status.js` | Adds `event_status` column to the `audit_logs_event` table |
+| Migration                          | Description                                                |
+| ---------------------------------- | ---------------------------------------------------------- |
+| `audit-log-migrations.js`          | Creates the 8 main tables with FK cascades                 |
+| `audit-log-performance-indexes.js` | ~35 performance indexes                                    |
+| `audit-log-event-status.js`        | Adds `event_status` column to the `audit_logs_event` table |
 
 ## Quick Start
 
@@ -80,21 +81,26 @@ The main configuration interface provides the following options:
 interface AuditLogModuleOptions {
   // User identification
   getUserId?: (req: AuditLogRequest) => string;
-  
+
   // IP address extraction
   getIpAddress?: (req: AuditLogRequest) => string;
-  
+
   // Feature toggles
   enableErrorLogging?: boolean;
   enableRequestLogging?: boolean;
   enableIntegrationLogging?: boolean;
-  
+
   // Database auditing
   auditedTables?: Array<string>;
-  
+
   // Authentication routes
   authRoutes?: AuditLogRequestAuthRoute[];
-  
+
+  // Performance and write isolation
+  enableBuffer?: boolean;
+  bufferConfig?: Partial<AuditLogBufferConfig>;
+  auditSequelize?: AuditLogSequelizeConfig;
+
   // Archive configuration
   enableArchive?: false | AuditLogArchiveConfig;
 }
@@ -141,12 +147,7 @@ Automatically track changes to specified database tables:
 
 ```typescript
 AuditLogModule.forRoot({
-  auditedTables: [
-    'users',
-    'orders',
-    'products',
-    'transactions',
-  ],
+  auditedTables: ['users', 'orders', 'products', 'transactions'],
 });
 ```
 
@@ -181,14 +182,14 @@ async updatePassword(input: UpdatePasswordInput): Promise<UpdatePasswordOutput> 
 
 **Decorator Options:**
 
-| Option | Type | Required | Description |
-|---|---|---|---|
-| `eventType` | `string` | Yes | Event type identifier |
-| `eventDescription` | `string` | Yes | Event description |
-| `getUserId` | `(args, result) => string` | Yes | Extracts the user ID |
-| `getIpAddress` | `(args, result) => string` | No | Extracts the IP address (default: `'0.0.0.0'`) |
-| `getDetails` | `(args, result) => Record<string, any>` | No | Event details on **success** |
-| `onError` | `(args, error) => Record<string, any>` | No | Event details on **error**. If not provided, logs `{ params, error: { message, name } }` |
+| Option             | Type                                    | Required | Description                                                                              |
+| ------------------ | --------------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| `eventType`        | `string`                                | Yes      | Event type identifier                                                                    |
+| `eventDescription` | `string`                                | Yes      | Event description                                                                        |
+| `getUserId`        | `(args, result) => string`              | Yes      | Extracts the user ID                                                                     |
+| `getIpAddress`     | `(args, result) => string`              | No       | Extracts the IP address (default: `'0.0.0.0'`)                                           |
+| `getDetails`       | `(args, result) => Record<string, any>` | No       | Event details on **success**                                                             |
+| `onError`          | `(args, error) => Record<string, any>`  | No       | Event details on **error**. If not provided, logs `{ params, error: { message, name } }` |
 
 **Using Direct Service Injection:**
 
@@ -211,7 +212,7 @@ export class UserService {
       description: 'User credential validation',
       details: {
         email: input.email,
-        success: !!user
+        success: !!user,
       },
       eventStatus: user ? 'SUCCESS' : 'ERROR',
     });
@@ -255,7 +256,7 @@ Configure data archiving for long-term storage in a separate database:
 ```typescript
 AuditLogModule.forRoot({
   enableArchive: {
-    retentionPeriod: 365, // days
+    archiveRetentionDays: 365, // days in the archive database
     batchSize: 1000,
     archiveCronSchedule: '0 2 * * *', // Daily at 2 AM
     archiveDatabase: {
@@ -269,6 +270,33 @@ AuditLogModule.forRoot({
   },
 });
 ```
+
+#### 8. Buffer and Dedicated Pool
+
+Use the buffer to reduce audit hook latency. When the buffer is enabled, `registerLog()` confirms enqueueing; persistence happens on size-based flush, interval flush, or shutdown.
+
+```typescript
+AuditLogModule.register({
+  enableBuffer: true,
+  bufferConfig: {
+    bufferSize: 100,
+    flushIntervalMs: 5000,
+    maxBufferSize: 1000,
+    maxFlushRetries: 3,
+  },
+  auditSequelize: {
+    dialect: 'mysql',
+    host: 'audit-db-host',
+    port: 3306,
+    database: 'audit_logs',
+    username: 'audit_user',
+    password: 'audit_password',
+    pool: { max: 5, min: 1, idle: 10000, acquire: 15000 },
+  },
+});
+```
+
+When `auditSequelize` connects successfully, audit writes use that dedicated pool. If it cannot connect, the library logs the error and falls back to the main pool.
 
 ## Advanced Usage
 
@@ -285,12 +313,12 @@ AuditLogModule.forRoot({
       const decoded = jwt.decode(token);
       return decoded?.sub;
     }
-    
+
     // Session-based extraction
     if (req.session?.user) {
       return req.session.user.id;
     }
-    
+
     return 'anonymous';
   },
 });
@@ -382,9 +410,10 @@ Configure data archiving settings for moving old audit logs to a separate databa
 
 ```typescript
 interface AuditLogArchiveConfig {
-  retentionPeriod: number; // Number of days to keep logs in main database
+  archiveCutoffDays?: number; // Days in the main database before archiving; defaults to logRetentionDays
+  archiveRetentionDays: number; // Days to keep logs in the archive database
   archiveDatabase: SequelizeModuleOptions; // Separate database configuration
-  batchSize?: number; // Number of records to process per batch
+  batchSize?: number; // Number of records per batch; internally capped at 500
   archiveCronSchedule: string; // Cron expression for archive schedule
 }
 ```
@@ -392,6 +421,7 @@ interface AuditLogArchiveConfig {
 ### Archive Database Models
 
 The archive system creates mirrored models for all audit log types:
+
 - `ArchiveLogModel` - Main audit logs
 - `ArchiveLogEntityModel` - Entity change logs
 - `ArchiveLogErrorModel` - Error logs
@@ -406,7 +436,11 @@ The archive system creates mirrored models for all audit log types:
 The library automatically compresses large payloads (> 1 KB) using gzip + Base64 to reduce database storage usage. Utilities are available for manual compression and decompression:
 
 ```typescript
-import { compressPayload, decompressPayload, isCompressed } from 'nestjs-sequelize-audit-log';
+import {
+  compressPayload,
+  decompressPayload,
+  isCompressed,
+} from 'nestjs-sequelize-audit-log';
 
 // Compresses if the value exceeds the threshold (default: 1024 bytes)
 const compressed = compressPayload(largeJsonString);
@@ -419,6 +453,7 @@ if (isCompressed(compressed)) {
 ```
 
 Compression is automatically applied to the following fields:
+
 - **Integration Log**: `requestPayload`, `responsePayload`
 - **Request Log**: `payload`, `responseBody`
 
@@ -442,16 +477,18 @@ export class ExternalSystemService {
     const client = await createAuditSoapClient(
       process.env.EXTERNAL_WSDL_URL!,
       { wsdl_options: { timeout: 60000 } },
-      process.env.EXTERNAL_ENDPOINT
+      process.env.EXTERNAL_ENDPOINT,
     );
 
     // Configure authentication if needed
     if (process.env.EXTERNAL_USER && process.env.EXTERNAL_PASSWORD) {
       const { BasicAuthSecurity } = await import('soap');
-      client.setSecurity(new BasicAuthSecurity(
-        process.env.EXTERNAL_USER,
-        process.env.EXTERNAL_PASSWORD
-      ));
+      client.setSecurity(
+        new BasicAuthSecurity(
+          process.env.EXTERNAL_USER,
+          process.env.EXTERNAL_PASSWORD,
+        ),
+      );
     }
 
     return client;
@@ -523,8 +560,13 @@ export class AppModule {}
       enableErrorLogging: true,
       enableIntegrationLogging: true,
       auditedTables: [
-        'users', 'orders', 'products', 'transactions',
-        'invoices', 'payments', 'shipping',
+        'users',
+        'orders',
+        'products',
+        'transactions',
+        'invoices',
+        'payments',
+        'shipping',
       ],
       getUserId: (req) => extractUserFromJWT(req),
       getIpAddress: (req) => extractRealIP(req),
@@ -538,7 +580,7 @@ export class AppModule {}
         },
       ],
       enableArchive: {
-        retentionPeriod: 2555, // 7 years
+        archiveRetentionDays: 2555, // 7 years in the archive database
         batchSize: 5000,
         archiveCronSchedule: '0 2 * * *', // Daily at 2 AM
         archiveDatabase: {

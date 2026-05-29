@@ -27,6 +27,10 @@ import {
 import { compressPayload } from '../../utils/compressPayload';
 import { extractClientIp } from '../../utils/ip';
 import { sanitizePayload } from '../../utils/sanitizePayload';
+import {
+  AUDIT_LOG_MODELS,
+  AuditLogModelSet,
+} from '../providers/audit-log-models.provider';
 
 import { AuditLogBufferService, BufferEntry } from './audit-log-buffer.service';
 import { PayloadDetailsService } from './payload-details.service';
@@ -95,7 +99,17 @@ export class AuditLogService {
     @Optional()
     @Inject('ENABLE_BUFFER')
     private readonly bufferEnabled?: boolean,
-  ) {}
+
+    @Optional()
+    @Inject(AUDIT_LOG_MODELS)
+    private readonly auditModels?: AuditLogModelSet,
+  ) {
+    if (this.bufferService && this.bufferEnabled) {
+      this.bufferService.setFlushCallback((entries) =>
+        this.flushEntries(entries),
+      );
+    }
+  }
 
   private static readonly asyncLocalStorage =
     new AsyncLocalStorage<AuditLogRequest>();
@@ -106,6 +120,21 @@ export class AuditLogService {
 
   private getCurrentRequest(): AuditLogRequest | undefined {
     return AuditLogService.asyncLocalStorage.getStore();
+  }
+
+  private get models(): AuditLogModelSet {
+    return (
+      this.auditModels || {
+        auditLogModel: this.auditLogModel,
+        auditLogEventModel: this.auditLogEventModel,
+        auditLogEntityModel: this.auditLogEntityModel,
+        auditLogErrorModel: this.auditLogErrorModel,
+        auditLogIntegrationModel: this.auditLogIntegrationModel,
+        auditLogRequestModel: this.auditLogRequestModel,
+        auditLogLoginModel: this.auditLogLoginModel,
+        auditLogDetailModel: this.auditLogDetailModel,
+      }
+    );
   }
 
   getUserInformation(): { id: string; ip: string } {
@@ -151,7 +180,7 @@ export class AuditLogService {
     //   },
     // });
 
-    await this.auditLogErrorModel.destroy({
+    await this.models.auditLogErrorModel.destroy({
       where: {
         createdAt: {
           [Op.lt]: cutoffDate,
@@ -159,7 +188,7 @@ export class AuditLogService {
       },
     });
 
-    await this.auditLogIntegrationModel.destroy({
+    await this.models.auditLogIntegrationModel.destroy({
       where: {
         createdAt: {
           [Op.lt]: cutoffDate,
@@ -167,7 +196,7 @@ export class AuditLogService {
       },
     });
 
-    await this.auditLogRequestModel.destroy({
+    await this.models.auditLogRequestModel.destroy({
       where: {
         createdAt: {
           [Op.lt]: cutoffDate,
@@ -183,7 +212,7 @@ export class AuditLogService {
     //   },
     // });
 
-    await this.auditLogDetailModel.destroy({
+    await this.models.auditLogDetailModel.destroy({
       where: {
         createdAt: {
           [Op.lt]: cutoffDate,
@@ -191,7 +220,7 @@ export class AuditLogService {
       },
     });
 
-    await this.auditLogModel.destroy({
+    await this.models.auditLogModel.destroy({
       where: {
         createdAt: {
           [Op.lt]: cutoffDate,
@@ -255,7 +284,7 @@ export class AuditLogService {
     try {
       const userInformation = userInfoOverride || this.getUserInformation();
 
-      const log = await this.auditLogModel.create({
+      const log = await this.models.auditLogModel.create({
         id: uuidv4(),
         logType: logType,
         userId: userInformation.id,
@@ -273,7 +302,10 @@ export class AuditLogService {
           await this._logError(log.id, data as AuditLogErrorType);
           break;
         case 'INTEGRATION':
-          await this._logIntegration(log.id, data as AuditLogHttpIntegrationType);
+          await this._logIntegration(
+            log.id,
+            data as AuditLogHttpIntegrationType,
+          );
           break;
         case 'REQUEST':
           await this._logRequest(log.id, data as AuditLogRequestType);
@@ -307,7 +339,7 @@ export class AuditLogService {
       responseBody,
     }: AuditLogRequestType,
   ) {
-    await this.auditLogRequestModel.create({
+    await this.models.auditLogRequestModel.create({
       id: uuidv4(),
       logId: logId,
       requestMethod,
@@ -325,7 +357,7 @@ export class AuditLogService {
     userId: string,
     { system }: AuditLogLoginType,
   ) {
-    await this.auditLogLoginModel.create({
+    await this.models.auditLogLoginModel.create({
       id: uuidv4(),
       logId: logId,
       userId: userId,
@@ -352,7 +384,7 @@ export class AuditLogService {
         ? responsePayload
         : JSON.stringify(responsePayload ?? '');
 
-    await this.auditLogIntegrationModel.create({
+    await this.models.auditLogIntegrationModel.create({
       id: uuidv4(),
       logId: logId,
       integrationName,
@@ -374,7 +406,7 @@ export class AuditLogService {
       routeMethod,
     }: AuditLogErrorType,
   ) {
-    await this.auditLogErrorModel.create({
+    await this.models.auditLogErrorModel.create({
       id: uuidv4(),
       logId: logId,
       errorMessage: message,
@@ -405,7 +437,7 @@ export class AuditLogService {
         createdAt: now,
       }));
 
-      await this.auditLogModel.bulkCreate(
+      await this.models.auditLogModel.bulkCreate(
         logs as CreationAttributes<AuditLogModel>[],
       );
 
@@ -420,7 +452,7 @@ export class AuditLogService {
         createdAt: now,
       }));
 
-      await this.auditLogEntityModel.bulkCreate(
+      await this.models.auditLogEntityModel.bulkCreate(
         entityEntries as CreationAttributes<AuditLogEntityModel>[],
       );
     } catch (error) {
@@ -441,7 +473,7 @@ export class AuditLogService {
       entityKey,
     }: AuditLogDatabaseType,
   ) {
-    await this.auditLogEntityModel.create({
+    await this.models.auditLogEntityModel.create({
       id: uuidv4(),
       logId: logId,
       action,
@@ -457,7 +489,7 @@ export class AuditLogService {
     logId: string,
     { type, description, details, eventStatus }: AuditLogEventLogType,
   ) {
-    await this.auditLogEventModel.create({
+    await this.models.auditLogEventModel.create({
       id: uuidv4(),
       logId: logId,
       eventType: type,

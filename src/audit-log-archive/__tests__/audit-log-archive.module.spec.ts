@@ -17,7 +17,7 @@ jest.mock('sequelize-typescript', () => {
 });
 
 describe('AuditLogArchiveModule', () => {
-  const { __mockInstance } = require('sequelize-typescript');
+  const { Sequelize, __mockInstance } = require('sequelize-typescript');
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -36,12 +36,24 @@ describe('AuditLogArchiveModule', () => {
           host: 'localhost',
           port: 1433,
           database: 'archive_db',
+          username: 'sa',
+          password: 'StrongPassword!123',
           dialectOptions: {},
         } as any,
         archiveCronSchedule: '0 2 * * *',
       });
 
       expect(result).toBe(true);
+      expect(Sequelize).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dialect: 'mssql',
+          host: 'localhost',
+          port: 1433,
+          database: 'archive_db',
+          username: 'sa',
+          password: 'StrongPassword!123',
+        }),
+      );
       expect(__mockInstance.authenticate).toHaveBeenCalled();
       expect(__mockInstance.close).toHaveBeenCalled();
     });
@@ -137,6 +149,48 @@ describe('AuditLogArchiveModule', () => {
 
       expect(__mockInstance.addModels).toHaveBeenCalled();
       expect(__mockInstance.sync).toHaveBeenCalled();
+    });
+
+    it('ARCHIVE_SEQUELIZE factory should preserve dialectOptions options', async () => {
+      const config = {
+        archiveRetentionDays: 90,
+        archiveDatabase: {
+          dialect: 'mssql',
+          host: 'localhost',
+          port: 1433,
+          database: 'archive_db',
+          username: 'sa',
+          password: 'StrongPassword!123',
+          dialectOptions: {
+            connectTimeout: 15000,
+            options: {
+              encrypt: false,
+              trustServerCertificate: true,
+              requestTimeout: 45000,
+            },
+          },
+        } as any,
+        archiveCronSchedule: '0 2 * * *',
+      };
+
+      const result = AuditLogArchiveModule.register(config);
+      const providers = result.providers as any[];
+      const archiveSeqProvider = providers.find((p) => p.provide === 'ARCHIVE_SEQUELIZE');
+
+      await archiveSeqProvider.useFactory();
+
+      expect(Sequelize).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          dialectOptions: expect.objectContaining({
+            connectTimeout: 15000,
+            options: expect.objectContaining({
+              encrypt: false,
+              trustServerCertificate: true,
+              requestTimeout: 45000,
+            }),
+          }),
+        }),
+      );
     });
   });
 });
