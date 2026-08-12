@@ -1,0 +1,14 @@
+# LF no repositório e no working tree, em qualquer SO. Sem isto, um checkout
+# no Windows reescreve a árvore inteira em CRLF e todo arquivo aparece como
+# modificado.
+* text=auto eol=lf
+
+# Arquivos que nunca devem sofrer conversão de line ending.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.tgz binary
+*.gz binary
+*.zip binary
