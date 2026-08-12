@@ -63,14 +63,20 @@ export function AuditLogEvent(options: AuditLogEventOptions) {
         try {
           const auditLogEventService = (global as any)['AUDIT_LOG_SERVICE'];
           if (auditLogEventService) {
-            await auditLogEventService.logEvent({
-              type: options.eventType,
-              description: options.eventDescription,
-              userId: userId,
-              ipAddress: ipAddress,
-              details: { details },
-              eventStatus: eventStatus,
-            });
+            // O decorator descarta o protocolo, então não há motivo para
+            // segurar o método decorado esperando o INSERT: quando o buffer
+            // está habilitado, enfileira em vez de gravar de forma síncrona.
+            await auditLogEventService.logEvent(
+              {
+                type: options.eventType,
+                description: options.eventDescription,
+                userId: userId,
+                ipAddress: ipAddress,
+                details: { details },
+                eventStatus: eventStatus,
+              },
+              { sync: false },
+            );
           }
         } catch (error) {
           console.error('Failed to log audit event:', error);

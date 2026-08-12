@@ -43,6 +43,7 @@ describe('AuditLogEvent Decorator', () => {
         userId: 'user-1',
         eventStatus: 'SUCCESS',
       }),
+      { sync: false },
     );
   });
 
@@ -61,6 +62,7 @@ describe('AuditLogEvent Decorator', () => {
         details: { details: { customDetail: 'ok' } },
         eventStatus: 'SUCCESS',
       }),
+      { sync: false },
     );
   });
 
@@ -75,6 +77,7 @@ describe('AuditLogEvent Decorator', () => {
       expect.objectContaining({
         ipAddress: '0.0.0.0',
       }),
+      { sync: false },
     );
   });
 
@@ -92,6 +95,7 @@ describe('AuditLogEvent Decorator', () => {
       expect.objectContaining({
         ipAddress: '10.0.0.1',
       }),
+      { sync: false },
     );
   });
 
@@ -113,6 +117,7 @@ describe('AuditLogEvent Decorator', () => {
       expect.objectContaining({
         eventStatus: 'ERROR',
       }),
+      { sync: false },
     );
   });
 
@@ -146,6 +151,7 @@ describe('AuditLogEvent Decorator', () => {
         },
         eventStatus: 'ERROR',
       }),
+      { sync: false },
     );
   });
 

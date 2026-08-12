@@ -134,10 +134,37 @@ describe('AuditLogService', () => {
     it('should call registerLog with EVENT type', async () => {
       const spy = jest
         .spyOn(service, 'registerLog')
-        .mockResolvedValue(undefined);
+        .mockResolvedValue('log-1');
       const data = { type: 'TEST', description: 'test' };
       await service.logEvent(data);
-      expect(spy).toHaveBeenCalledWith('EVENT', data);
+      expect(spy).toHaveBeenCalledWith('EVENT', data, undefined);
+    });
+
+    it('should return the log id as protocol', async () => {
+      const protocol = await service.logEvent({
+        type: 'TEST',
+        description: 'test',
+      });
+
+      expect(auditLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'mock-uuid' }),
+      );
+      expect(protocol).toBe('log-1');
+      expect(auditLogEventModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ logId: 'log-1' }),
+      );
+    });
+
+    it('should return null when the write fails', async () => {
+      jest.spyOn((service as any).logger, 'error').mockImplementation();
+      auditLogModel.create.mockRejectedValueOnce(new Error('DB error'));
+
+      const protocol = await service.logEvent({
+        type: 'FAIL',
+        description: 'fail',
+      });
+
+      expect(protocol).toBeNull();
     });
   });
 
@@ -355,6 +382,106 @@ describe('AuditLogService', () => {
         expect.objectContaining({ logId: 'dedicated-log' }),
       );
       expect(auditLogModel.create).not.toHaveBeenCalled();
+    });
+
+    describe('with buffer enabled', () => {
+      let bufferService: { add: jest.Mock; setFlushCallback: jest.Mock };
+      let svc: AuditLogService;
+
+      beforeEach(() => {
+        bufferService = { add: jest.fn(), setFlushCallback: jest.fn() };
+        svc = new AuditLogService(
+          auditLogModel,
+          auditLogEventModel,
+          auditLogEntityModel,
+          auditLogErrorModel,
+          auditLogIntegrationModel,
+          auditLogRequestModel,
+          auditLogLoginModel,
+          auditLogDetailModel,
+          payloadDetailsService,
+          30,
+          undefined,
+          undefined,
+          bufferService as any,
+          true,
+        );
+      });
+
+      it('should return the buffered log id without writing immediately', async () => {
+        const protocol = await svc.registerLog('ENTITY', {
+          action: 'CREATE',
+          entity: 'users',
+          changedValues: { id: 1 },
+        } as any);
+
+        expect(protocol).toBe('mock-uuid');
+        expect(bufferService.add).toHaveBeenCalledWith(
+          expect.objectContaining({ logId: 'mock-uuid', logType: 'ENTITY' }),
+        );
+        expect(auditLogModel.create).not.toHaveBeenCalled();
+      });
+
+      it('should write EVENT synchronously by default so the protocol is persisted', async () => {
+        const protocol = await svc.logEvent({
+          type: 'SYNC_EVENT',
+          description: 'bypasses the buffer',
+        });
+
+        expect(bufferService.add).not.toHaveBeenCalled();
+        expect(auditLogModel.create).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'mock-uuid', logType: 'EVENT' }),
+        );
+        expect(protocol).toBe('log-1');
+      });
+
+      it('should buffer EVENT when sync is explicitly disabled', async () => {
+        const protocol = await svc.logEvent(
+          { type: 'BUFFERED', description: 'buffered event' },
+          { sync: false },
+        );
+
+        expect(protocol).toBe('mock-uuid');
+        expect(bufferService.add).toHaveBeenCalledWith(
+          expect.objectContaining({ logId: 'mock-uuid', logType: 'EVENT' }),
+        );
+        expect(auditLogModel.create).not.toHaveBeenCalled();
+      });
+
+      it('should bypass the buffer for any type when sync is forced', async () => {
+        await svc.registerLog(
+          'ERROR',
+          {
+            message: 'boom',
+            errorType: 'Error',
+            stackTrace: '',
+            routePath: '/x',
+            routeMethod: 'GET',
+          } as any,
+          { sync: true },
+        );
+
+        expect(bufferService.add).not.toHaveBeenCalled();
+        expect(auditLogModel.create).toHaveBeenCalledWith(
+          expect.objectContaining({ logType: 'ERROR' }),
+        );
+      });
+    });
+
+    it('should persist buffered entries under the protocol id handed out', async () => {
+      await service.flushEntries([
+        {
+          logId: 'protocol-123',
+          logType: 'EVENT',
+          data: { type: 'BUFFERED', description: 'buffered event' },
+          userInfo: { id: 'user-1', ip: '127.0.0.1' },
+          timestamp: new Date(),
+        },
+      ]);
+
+      expect(auditLogModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'protocol-123' }),
+      );
     });
   });
 

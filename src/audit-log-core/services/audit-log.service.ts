@@ -35,20 +35,28 @@ import {
 import { AuditLogBufferService, BufferEntry } from './audit-log-buffer.service';
 import { PayloadDetailsService } from './payload-details.service';
 
-type AuditLogType =
+export type AuditLogType =
   | 'ENTITY'
   | 'REQUEST'
   | 'ERROR'
   | 'EVENT'
   | 'LOGIN'
   | 'INTEGRATION';
-type AuditLogDataType =
+export type AuditLogDataType =
   | AuditLogEventLogType
   | AuditLogDatabaseType
   | AuditLogErrorType
   | AuditLogHttpIntegrationType
   | AuditLogLoginType
   | AuditLogRequestType;
+
+export type RegisterLogOptions = {
+  /**
+   * Força (`true`) ou dispensa (`false`) a gravação síncrona, ignorando o
+   * buffer. Quando omitido, apenas `EVENT` grava de forma síncrona.
+   */
+  sync?: boolean;
+};
 
 @Injectable()
 export class AuditLogService {
@@ -229,23 +237,54 @@ export class AuditLogService {
     });
   }
 
-  async logEvent(data: AuditLogEventLogType) {
-    this.registerLog('EVENT', data);
+  /**
+   * Registra um log de evento e devolve o id do log, que serve como protocolo.
+   *
+   * Eventos são gravados de forma síncrona por padrão (mesmo com o buffer
+   * habilitado), para que o protocolo devolvido já exista no banco. Passe
+   * `{ sync: false }` para enfileirar no buffer em cenários de alto volume —
+   * nesse caso o id é devolvido antes da gravação, que acontece no flush.
+   *
+   * @returns o id do log, ou `null` caso a gravação direta falhe.
+   */
+  async logEvent(
+    data: AuditLogEventLogType,
+    options?: RegisterLogOptions,
+  ): Promise<string | null> {
+    return this.registerLog('EVENT', data, options);
   }
 
-  async registerLog(logType: AuditLogType, data: AuditLogDataType) {
-    if (this.bufferService && this.bufferEnabled) {
+  /**
+   * Registra um log e devolve o id gerado, que serve como protocolo.
+   *
+   * Com o buffer habilitado a gravação é adiada para o flush e o id é devolvido
+   * imediatamente — exceto para `EVENT`, que grava de forma síncrona por padrão
+   * para garantir que o protocolo já exista no banco. Use `options.sync` para
+   * forçar o comportamento em qualquer direção.
+   *
+   * @returns o id do log, ou `null` caso a gravação direta falhe.
+   */
+  async registerLog(
+    logType: AuditLogType,
+    data: AuditLogDataType,
+    options?: RegisterLogOptions,
+  ): Promise<string | null> {
+    const logId = uuidv4();
+    const sync = options?.sync ?? logType === 'EVENT';
+
+    if (!sync && this.bufferService && this.bufferEnabled) {
       const userInformation = this.getUserInformation();
       this.bufferService.add({
+        logId,
         logType,
         data,
         userInfo: userInformation,
         timestamp: new Date(),
       });
-      return;
+      return logId;
     }
 
-    await this._directRegisterLog(logType, data);
+    return this._directRegisterLog(logType, data, undefined, logId);
   }
 
   async flushEntries(entries: BufferEntry[]): Promise<void> {
@@ -257,6 +296,7 @@ export class AuditLogService {
         'ENTITY',
         entityEntries.map((e) => e.data as AuditLogDatabaseType),
         entityEntries.map((e) => e.userInfo),
+        entityEntries.map((e) => e.logId),
       );
     }
 
@@ -266,6 +306,7 @@ export class AuditLogService {
           entry.logType as AuditLogType,
           entry.data,
           entry.userInfo,
+          entry.logId,
         );
       } catch (error) {
         this.logger.error(
@@ -280,12 +321,13 @@ export class AuditLogService {
     logType: AuditLogType,
     data: AuditLogDataType,
     userInfoOverride?: { id: string; ip: string },
-  ) {
+    logIdOverride?: string,
+  ): Promise<string | null> {
     try {
       const userInformation = userInfoOverride || this.getUserInformation();
 
       const log = await this.models.auditLogModel.create({
-        id: uuidv4(),
+        id: logIdOverride || uuidv4(),
         logType: logType,
         userId: userInformation.id,
         ipAddress: userInformation.ip,
@@ -323,8 +365,11 @@ export class AuditLogService {
         default:
           break;
       }
+
+      return log.id;
     } catch (error) {
       this.logger.error(`Error registering audit log (${logType}):`, error);
+      return null;
     }
   }
   private async _logRequest(
@@ -418,19 +463,24 @@ export class AuditLogService {
     } as CreationAttributes<AuditLogErrorModel>);
   }
 
+  /**
+   * Registra vários logs em lote e devolve os ids gerados (protocolos), na
+   * mesma ordem das entradas. Devolve uma lista vazia se a gravação falhar.
+   */
   async bulkRegisterLog(
     logType: AuditLogType,
     entries: AuditLogDatabaseType[],
     userInfoOverrides?: Array<{ id: string; ip: string }>,
-  ) {
-    if (entries.length === 0) return;
+    logIdOverrides?: string[],
+  ): Promise<string[]> {
+    if (entries.length === 0) return [];
 
     try {
       const defaultUserInfo = this.getUserInformation();
       const now = new Date();
 
       const logs = entries.map((_, index) => ({
-        id: uuidv4(),
+        id: logIdOverrides?.[index] || uuidv4(),
         logType,
         userId: userInfoOverrides?.[index]?.id || defaultUserInfo.id,
         ipAddress: userInfoOverrides?.[index]?.ip || defaultUserInfo.ip,
@@ -455,11 +505,14 @@ export class AuditLogService {
       await this.models.auditLogEntityModel.bulkCreate(
         entityEntries as CreationAttributes<AuditLogEntityModel>[],
       );
+
+      return logs.map((log) => log.id);
     } catch (error) {
       this.logger.error(
         `Error bulk registering audit logs (${logType}):`,
         error,
       );
+      return [];
     }
   }
 

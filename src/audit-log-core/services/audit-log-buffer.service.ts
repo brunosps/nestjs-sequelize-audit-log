@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { AuditLogBufferConfig } from '../../interfaces/audit-log-module-options.interface';
 
 export type BufferEntry = {
+  logId: string;
   logType: string;
   data: any;
   userInfo: { id: string; ip: string };

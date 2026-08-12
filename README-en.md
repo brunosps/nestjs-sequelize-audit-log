@@ -207,7 +207,7 @@ export class UserService {
   async validateUser(input: ValidateUserInput): Promise<boolean> {
     const user = await this.userRepository.findByEmail(input.email);
 
-    this.auditLogService.logEvent({
+    const protocol = await this.auditLogService.logEvent({
       type: 'USER_VALIDATION',
       description: 'User credential validation',
       details: {
@@ -217,6 +217,9 @@ export class UserService {
       eventStatus: user ? 'SUCCESS' : 'ERROR',
     });
 
+    // `protocol` is the `audit_logs` row id — keep it if you need to reference
+    // this audit entry later. It is `null` when the write fails.
+
     if (!user) {
       throw new Error('User not found');
     }
@@ -225,6 +228,47 @@ export class UserService {
   }
 }
 ```
+
+##### Log protocol
+
+`logEvent()` and `registerLog()` return the id of the row written to
+`audit_logs`. Use it as a protocol (receipt number) to reference the audit entry
+elsewhere — an API response, a ticket number, a link to a business record:
+
+```typescript
+const protocol = await this.auditLogService.logEvent({
+  type: 'CONTRACT_SIGNED',
+  description: 'Contract signed by the customer',
+  details: { contractId },
+});
+
+if (!protocol) {
+  // the write failed; the library already logged the error
+}
+
+return { contractId, auditProtocol: protocol };
+```
+
+Events are written **synchronously by default**, even when the buffer is
+enabled, so the returned protocol already exists in the database. For
+high-volume cases where the protocol does not need to be persisted right away,
+pass `{ sync: false }` to queue it in the buffer — the id comes back
+immediately and the write happens on flush:
+
+```typescript
+const protocol = await this.auditLogService.logEvent(data, { sync: false });
+```
+
+The reverse also works: `{ sync: true }` makes any log type bypass the buffer
+and write immediately.
+
+The `@AuditLogEvent` decorator discards the protocol, so it uses
+`{ sync: false }`: with the buffer enabled it enqueues instead of holding the
+decorated method waiting on the INSERT. Call `logEvent()` directly if you need
+the protocol.
+
+`bulkRegisterLog()` follows the same idea and returns the list of protocols, in
+the same order as the entries.
 
 #### 6. Authentication Routes
 
@@ -273,7 +317,9 @@ AuditLogModule.forRoot({
 
 #### 8. Buffer and Dedicated Pool
 
-Use the buffer to reduce audit hook latency. When the buffer is enabled, `registerLog()` confirms enqueueing; persistence happens on size-based flush, interval flush, or shutdown.
+Use the buffer to reduce audit hook latency. When the buffer is enabled, `registerLog()` confirms enqueueing and returns the protocol right away; persistence happens on size-based flush, interval flush, or shutdown.
+
+`EVENT` logs are the exception: they are written synchronously even with the buffer enabled, so the returned protocol already exists in the database. Pass `{ sync: false }` to `logEvent()` to queue them as well.
 
 ```typescript
 AuditLogModule.register({

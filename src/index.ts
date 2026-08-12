@@ -3,10 +3,17 @@ export { AuditLogModule } from './audit-log.module';
 
 // Service exports
 export { AuditLogService } from './audit-log-core/services/audit-log.service';
+export type {
+  AuditLogType,
+  AuditLogDataType,
+  RegisterLogOptions,
+} from './audit-log-core/services/audit-log.service';
 export { PayloadDetailsService } from './audit-log-core/services/payload-details.service';
 
 // Event module exports
 export { AuditLogEvent } from './audit-log-event/decorators/audit-log-event.decorator';
+export { AuditLogEventService } from './audit-log-event/services/audit-log-event.service';
+export type { AuditLogEventLogType } from './audit-log-event/services/audit-log-event.service';
 
 // Integration module exports
 export { SoapClientUtilsProvider } from './audit-log-integration/providers/soap-client-utils.provider';

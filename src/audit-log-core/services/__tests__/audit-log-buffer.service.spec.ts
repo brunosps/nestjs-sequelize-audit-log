@@ -8,7 +8,10 @@ describe('AuditLogBufferService', () => {
   let flushCallback: jest.Mock;
   let config: any;
 
+  let entrySeq = 0;
+
   const createEntry = (logType = 'ENTITY'): BufferEntry => ({
+    logId: `log-${(entrySeq += 1)}`,
     logType,
     data: { action: 'CREATE', entity: 'users', changedValues: { id: 1 } },
     userInfo: { id: 'user-1', ip: '127.0.0.1' },

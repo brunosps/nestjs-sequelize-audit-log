@@ -215,7 +215,7 @@ export class UserService {
     const user = await this.userRepository.findByEmail(input.email);
 
     // Log manual do evento com status
-    this.auditLogService.logEvent({
+    const protocol = await this.auditLogService.logEvent({
       type: 'USER_VALIDATION',
       description: 'Validação de credenciais do usuário',
       details: {
@@ -225,6 +225,9 @@ export class UserService {
       eventStatus: user ? 'SUCCESS' : 'ERROR',
     });
 
+    // `protocol` é o id do log em `audit_logs` — guarde-o se precisar
+    // referenciar essa auditoria depois. É `null` se a gravação falhar.
+
     if (!user) {
       throw new Error('Usuário não encontrado');
     }
@@ -233,6 +236,46 @@ export class UserService {
   }
 }
 ````
+
+##### Protocolo do log
+
+`logEvent()` e `registerLog()` devolvem o id do log gravado em `audit_logs`, que
+serve como protocolo para referenciar a auditoria em outros lugares (número de
+ocorrência, resposta de API, vínculo com um registro de negócio):
+
+```typescript
+const protocol = await this.auditLogService.logEvent({
+  type: 'CONTRACT_SIGNED',
+  description: 'Contrato assinado pelo cliente',
+  details: { contractId },
+});
+
+if (!protocol) {
+  // a gravação falhou; o erro já foi logado pela lib
+}
+
+return { contractId, auditProtocol: protocol };
+```
+
+Eventos são gravados de forma **síncrona por padrão**, mesmo com o buffer
+habilitado, para que o protocolo devolvido já exista no banco. Em cenários de
+alto volume, onde o protocolo não precisa estar persistido na hora, use
+`{ sync: false }` para enfileirar no buffer — o id é devolvido imediatamente e a
+gravação acontece no flush:
+
+```typescript
+const protocol = await this.auditLogService.logEvent(data, { sync: false });
+```
+
+O inverso também vale: `{ sync: true }` força qualquer tipo de log a ignorar o
+buffer e gravar na hora.
+
+O decorator `@AuditLogEvent` descarta o protocolo, então usa `{ sync: false }`:
+com o buffer ativo ele enfileira em vez de segurar o método decorado esperando o
+INSERT. Se precisar do protocolo, chame `logEvent()` direto.
+
+`bulkRegisterLog()` segue a mesma ideia e devolve a lista de protocolos, na
+mesma ordem das entradas.
 
 #### 6. Rotas de Autenticação
 
@@ -292,7 +335,9 @@ AuditLogModule.register({
 
 #### 9. Buffer e Pool Dedicado
 
-Use o buffer para reduzir a latência dos hooks de auditoria. Com o buffer ativo, `registerLog()` confirma o enfileiramento; a persistência acontece no flush por tamanho, intervalo ou shutdown.
+Use o buffer para reduzir a latência dos hooks de auditoria. Com o buffer ativo, `registerLog()` confirma o enfileiramento e devolve o protocolo na hora; a persistência acontece no flush por tamanho, intervalo ou shutdown.
+
+Logs do tipo `EVENT` são a exceção: gravam de forma síncrona mesmo com o buffer ativo, para que o protocolo devolvido já exista no banco. Passe `{ sync: false }` em `logEvent()` para enfileirá-los também.
 
 ```typescript
 AuditLogModule.register({

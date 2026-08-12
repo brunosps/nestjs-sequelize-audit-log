@@ -5,7 +5,7 @@ describe('AuditLogEventService', () => {
   let mockAuditLogService: { logEvent: jest.Mock };
 
   beforeEach(() => {
-    mockAuditLogService = { logEvent: jest.fn() };
+    mockAuditLogService = { logEvent: jest.fn().mockResolvedValue('log-1') };
     service = new AuditLogEventService(mockAuditLogService as any);
   });
 
@@ -21,7 +21,7 @@ describe('AuditLogEventService', () => {
 
     await service.logEvent(data);
 
-    expect(mockAuditLogService.logEvent).toHaveBeenCalledWith(data);
+    expect(mockAuditLogService.logEvent).toHaveBeenCalledWith(data, undefined);
   });
 
   it('should call logEvent with minimal data', async () => {
@@ -32,6 +32,26 @@ describe('AuditLogEventService', () => {
 
     await service.logEvent(data);
 
-    expect(mockAuditLogService.logEvent).toHaveBeenCalledWith(data);
+    expect(mockAuditLogService.logEvent).toHaveBeenCalledWith(data, undefined);
+  });
+
+  it('should return the log id as protocol', async () => {
+    const protocol = await service.logEvent({
+      type: 'TEST',
+      description: 'test event',
+    });
+
+    expect(protocol).toBe('log-1');
+  });
+
+  it('should return null when the underlying write fails', async () => {
+    mockAuditLogService.logEvent.mockResolvedValue(null);
+
+    const protocol = await service.logEvent({
+      type: 'TEST',
+      description: 'test event',
+    });
+
+    expect(protocol).toBeNull();
   });
 });
